@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "screenrecon"
+name = "ScreenRecon"
 dynamic = ["version"]
 description = "Watch a screen region; when the mouse dwells there, recognise it with AI and push the result to Telegram."
 readme = "README.md"

@@ -1,0 +1,39 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.repoql/
+*.tmp.*
+.coverage
+htmlcov/
+.DS_Store
+
+# Credentials. --config accepts any path, so match config files by shape rather
+# than by one hardcoded name.
+.env
+.env.*
+.envrc
+config.json
+*config*.json
+*.local.json
+
+# Captures and transcripts from a local run. The .txt holds the AI's
+# transcription of whatever was on screen, so it matters at least as much as the
+# image. Matched by the timestamp shape storage.new_stem produces, so that
+# ordinary repo files like requirements.txt are unaffected.
+# Anchored to the repository root: an unanchored 'ScreenRecon/' also matches
+# src/screenrecon/ on case-insensitive filesystems, which would exclude the
+# entire package from the repository.
+/ScreenRecon/
+/captures/
+[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9]*.txt
+[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9]*.png
+*.png
+*.jpg
+*.jpeg
+*.webp

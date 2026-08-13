@@ -27,6 +27,7 @@
 - Branch naming: `SR-<issue#>-<short-slug>` (e.g. `SR-2-drag-picker`). `SR` = ScreenRecon; slugs are lowercase kebab-case.
 - PR title starts with the branch prefix: `SR-<issue#> <description>` (e.g. `SR-2 Add drag-to-select region picker`). Mirrors the branch name so issue → branch → PR are visually linked at a glance.
 - PR body contains `Closes #<n>` so merging auto-closes the issue.
+- On a feature branch, add new commits for iterative changes — do not `git commit --amend` and force-push. The PR's Commits tab should show the progression of decisions (add rule, then implement, then adjust, etc.). Squash merge at the end still collapses everything into a single commit on `main`.
 - Merge method: **squash merge** — keeps `main` linear, one commit per issue.
 - The single exception: release-plumbing PRs opened by `github-actions[bot]`. The release workflow (`release-prepare.yml`) creates a `release/vX.Y.Z` branch, bumps `__version__`, opens a PR to `main`, and enables auto-merge on it. These PRs are not tied to a tracking issue and do not follow the `SR-<issue#>-<slug>` branch naming.
 

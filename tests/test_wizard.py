@@ -258,6 +258,55 @@ def test_wizard_falls_back_to_default_region_on_picker_cancel(
     }
 
 
+def test_wizard_keeps_current_region_when_picker_cannot_open(
+    tmp_path, answers, offline, capsys
+):
+    """PickerError (missing tkinter / no display) must not crash the wizard —
+    the user should see the error and end up with the current region intact.
+    """
+    scripted, _ = answers
+    path = tmp_path / "config.json"
+    path.write_text(
+        json.dumps(
+            {
+                "region": {"left": 50, "top": 60, "width": 400, "height": 300},
+                "anthropic_api_key": "old-key",
+                "telegram_bot_token": "old-token",
+                "telegram_chat_id": "old-chat",
+                "save_dir": str(tmp_path),
+                "prompt": "p",
+                "prompts": {},
+                "dwell_seconds": 3,
+                "model": "claude-opus-5",
+            }
+        ),
+        encoding="utf-8",
+    )
+    scripted.extend(
+        [
+            "Y",  # open the picker
+            "3",
+            "claude-opus-5",
+            "p",
+            "k",
+            "t",
+            "c",
+            str(tmp_path),
+        ]
+    )
+
+    class ExplodingPicker:
+        def pick(self):
+            raise picker.PickerError("tkinter is not available on this Python")
+
+    assert config.run_wizard(path, picker_factory=lambda: ExplodingPicker()) == 0
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["region"] == {"left": 50, "top": 60, "width": 400, "height": 300}
+    output = capsys.readouterr().out
+    assert "tkinter is not available" in output
+    assert "Keeping the current region" in output
+
+
 def test_wizard_aborts_cleanly_on_closed_stdin(tmp_path, answers, offline, capsys):
     path = tmp_path / "config.json"
     assert config.run_wizard(path, picker_factory=_picker_factory(None)) == 1

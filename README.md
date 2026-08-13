@@ -43,13 +43,11 @@ pip install -e ".[dev]"
 ## Quick start
 
 ```bash
-# 1. Find the coordinates of the area you want to watch.
-screenrecon --show-cursor
-
-# 2. Fill in region, credentials and save directory.
+# 1. Set up: pick the region interactively (drag a rectangle across the screen),
+#    then fill in credentials and save directory.
 screenrecon --configure
 
-# 3. Start watching.
+# 2. Start watching.
 screenrecon
 ```
 
@@ -62,8 +60,7 @@ cursor there will never re-trigger.
 | Command | What it does |
 | --- | --- |
 | `screenrecon` | Watch the configured region |
-| `screenrecon --configure` | Interactive setup; verifies both sets of credentials online |
-| `screenrecon --show-cursor` | Print live cursor coordinates, marking when they are inside the configured region |
+| `screenrecon --configure` | Interactive setup: drag-to-select region picker, then credentials (verified online) |
 | `screenrecon --mode NAME` | Watch using the `prompts.NAME` preset instead of the default prompt |
 | `screenrecon ask "question"` | Capture once, answer one question, exit |
 | `screenrecon ask` | Capture once, then keep asking questions about that screenshot |

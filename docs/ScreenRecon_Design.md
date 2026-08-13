@@ -15,6 +15,7 @@
 | v1.0 draft | 2026-08-12 | Chinese | Initial draft, written before implementation. Not part of this versioned series. |
 | **0.1.0** | 2026-08-13 | English | First released design document. Translated to English and reconciled with the shipped implementation: licence changed to Apache 2.0, user-facing language changed to English, default model updated, and the design corrected wherever the draft's assumptions turned out to be wrong. Every deviation is listed in [§11](#11-changes-from-the-v10-draft). |
 | **0.1.1** | 2026-08-13 | English | §7 rewritten: release flow moves from a single direct-push workflow to a two-workflow PR-based flow (`release-prepare.yml` opens a release PR with auto-merge; `release-publish.yml` runs test / build / tag / publish on the merge commit). Motivated by branch-protection alignment — `github-actions[bot]` cannot bypass rulesets, so bumps must land via PR like every other change. |
+| **0.1.2** | 2026-08-14 | English | Drag-to-select region picker replaces the `--show-cursor` + manual-entry flow (SR-2). New §5.9 documents the tkinter overlay and its test seam. FR-12 restated in terms of the picker; §3.3 no longer lists a graphical picker as out of scope. `--show-cursor` was removed from the CLI; users on the old flag get a one-line hint pointing at `--configure`. Multi-monitor: the overlay spans the virtual desktop, and `platform.enumerate_monitors()` / `find_monitor_containing()` power the Esc-fallback centring on whichever monitor holds the cursor. |
 
 ---
 
@@ -84,12 +85,12 @@ Wayland is explicitly unsupported — see [§5.2](#52-cursor-position-platformpy
 | FR-9 | The screenshot (PNG) and the text (TXT) are archived under timestamped names | P0 |
 | FR-10 | After firing, the cursor must leave the region before the trigger can fire again | P0 |
 | FR-11 | An interactive setup wizard (`--configure`) verifies both sets of credentials online | P0 |
-| FR-12 | A `--show-cursor` helper prints live cursor coordinates to help pick a region | P1 |
+| FR-12 | The wizard's region step uses an interactive drag-to-select picker (multi-monitor aware); Esc falls back to a 640×480 region centred on the current monitor | P1 |
 | FR-13 | Prompt presets: a built-in default plus user-defined named prompts, selected with `--mode <name>` | P1 |
 | FR-14 | An `ask` subcommand captures once and answers questions about that screenshot | P2 |
 | FR-15 | The `ANTHROPIC_API_KEY` environment variable overrides the key in the config file | P2 |
 
-All fifteen are implemented.
+All fifteen are implemented. FR-12 was originally a `--show-cursor` coordinate-reader helper; the drag-to-select picker replaces it and `--show-cursor` was removed in 0.1.2.
 
 ### 3.2 Non-functional requirements
 
@@ -107,8 +108,8 @@ All fifteen are implemented.
 
 ### 3.3 Explicitly out of scope for v1
 
-- A graphical interface or drag-to-select region picker (`--show-cursor` plus
-  manual entry replaces it)
+- A general graphical interface beyond the drag-to-select region picker (which
+  now ships — see §5.9)
 - Content-change triggering (a superseded design, replaced by dwell triggering)
 - Watching multiple regions simultaneously
 - A hosted backend or user accounts
@@ -400,8 +401,7 @@ repeated invalid answers give up.
 
 ```
 screenrecon                     read config, enter the watch loop
-screenrecon --configure         interactive setup wizard
-screenrecon --show-cursor       print live cursor coordinates
+screenrecon --configure         interactive setup wizard (opens the drag picker)
 screenrecon --mode <name>       use prompts.<name> as this run's prompt
 screenrecon ask [question]      capture once and ask about it
 screenrecon --config <path>     use an alternative config file
@@ -412,11 +412,41 @@ Global flags precede the subcommand. `--mode` is resolved on every path that
 reaches the API, so an unknown preset is always an error rather than a silently
 ignored flag; with `ask` and no question, the preset *is* the question.
 
+`--show-cursor` from earlier versions is intercepted with a friendly one-line
+error pointing the user at `--configure`; argparse would otherwise print
+`unrecognized arguments`, which reveals nothing about the replacement flow.
+
 Exit codes: 0 success, 1 error (including a failed `ask`), 2 usage error, 130
 interrupted. A final handler catches anything unexpected and prints a scrubbed
 one-line message: a traceback rendered with frame locals — as `rich`, Sentry and
 `pytest --showlocals` do — would otherwise expose the credentials held in the
 call stack.
+
+### 5.9 Region picker (`picker.py`)
+
+The wizard's region step opens a fullscreen semi-transparent tkinter overlay
+spanning the virtual desktop. The user drags a rectangle with the mouse; on
+release the picked region is returned in the same virtual-desktop pixel space
+`platform.get_cursor_pos()` reports. Pressing Esc, closing the overlay, or a
+zero-area click all cancel and return `None`, and the wizard then falls back to
+a 640×480 region centred on whichever monitor currently holds the cursor.
+
+**Seam for tests.** The wizard talks to the picker through the `RegionPicker`
+protocol (`pick() -> Region | None`). Production wires in `TkDragPicker`; tests
+wire in `ScriptedPicker`, which returns a preset region without opening a
+window. This keeps NFR-6 intact — the test suite still touches neither the
+network nor the screen.
+
+**Multi-monitor.** One overlay covers `mss.monitors[0]` (the union of every
+monitor), so mouse-root coordinates from tkinter are already virtual-desktop
+pixels; nothing per-monitor is needed on the write path. `platform.enumerate_monitors()`
+and `platform.find_monitor_containing()` power the "which monitor did the region
+land on?" feedback and the Esc-fallback centering.
+
+**Transparency fallback.** `-alpha 0.3` may be ignored on a bare X11 session
+without a compositor. The overlay stays black in that case; the red drag
+rectangle is still visible and coordinates are still correct — degrades to
+"blind pick" rather than failing.
 
 ---
 
@@ -526,6 +556,9 @@ No test touches the network or the screen.
 | Retina display | Captured content matches the region (at 1× logical resolution) |
 | Lock the screen, then unlock | The watcher survives and does **not** fire on unlock |
 | Region configured off-screen | Warned at startup rather than silently uploading black images |
+| `--configure` region step, single monitor | Drag opens the overlay, a rectangle draws, release saves the region; Esc falls back to 640×480 centred |
+| `--configure` region step, multi-monitor | Overlay spans every monitor; drag on either monitor yields correct virtual-desktop coordinates and the wizard reports which monitor holds the region |
+| `screenrecon --show-cursor` from muscle memory | Prints a one-line hint pointing at `--configure`, exits 2 |
 
 ### 8.3 Reference implementation
 

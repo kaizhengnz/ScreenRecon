@@ -26,6 +26,7 @@
 - Every branch is tied to a tracking issue. If no issue exists for the change, open one first.
 - Branch naming: `SR-<issue#>-<short-slug>` (e.g. `SR-2-drag-picker`). `SR` = ScreenRecon; slugs are lowercase kebab-case.
 - PR title starts with the branch prefix: `SR-<issue#> <description>` (e.g. `SR-2 Add drag-to-select region picker`). Mirrors the branch name so issue → branch → PR are visually linked at a glance.
+- No punctuation in commit titles, PR titles, or branch names. No `:` (drops conventional-commits prefixes like `feat:` / `fix:` / `refactor:`), no `,`, no `.`, no `_`, no quotes. Titles use plain prose (conjoin with "and", not ","); branch slugs are lowercase kebab-case — letters, digits, and hyphens only.
 - PR body contains `Closes #<n>` so merging auto-closes the issue.
 - On a feature branch, add new commits for iterative changes — do not `git commit --amend` and force-push. The PR's Commits tab should show the progression of decisions (add rule, then implement, then adjust, etc.). Squash merge at the end still collapses everything into a single commit on `main`.
 - Merge method: **squash merge** — keeps `main` linear, one commit per issue.

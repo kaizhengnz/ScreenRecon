@@ -16,6 +16,7 @@
 | **0.1.0** | 2026-08-13 | English | First released design document. Translated to English and reconciled with the shipped implementation: licence changed to Apache 2.0, user-facing language changed to English, default model updated, and the design corrected wherever the draft's assumptions turned out to be wrong. Every deviation is listed in [§11](#11-changes-from-the-v10-draft). |
 | **0.1.1** | 2026-08-13 | English | §7 rewritten: release flow moves from a single direct-push workflow to a two-workflow PR-based flow (`release-prepare.yml` opens a release PR with auto-merge; `release-publish.yml` runs test / build / tag / publish on the merge commit). Motivated by branch-protection alignment — `github-actions[bot]` cannot bypass rulesets, so bumps must land via PR like every other change. |
 | **0.1.2** | 2026-08-14 | English | Drag-to-select region picker replaces the `--show-cursor` + manual-entry flow (SR-2). New §5.9 documents the tkinter overlay and its test seam. FR-12 restated in terms of the picker; §3.3 no longer lists a graphical picker as out of scope. `--show-cursor` was removed from the CLI; users on the old flag get a one-line hint pointing at `--configure`. Multi-monitor: the overlay spans the virtual desktop, and `platform.enumerate_monitors()` / `find_monitor_containing()` power the Esc-fallback centring on whichever monitor holds the cursor. |
+| **0.1.3** | 2026-08-14 | English | Refactor pass (SR-7): monitor / virtual-desktop / mss code split out of `platform.py` into a new `display.py`, so the cursor path no longer implicitly depends on mss. Picker fallback orchestration hoisted into `picker.pick_region_or_default(current, factory)` — the wizard now delegates one call and no longer knows the picker's internals. Robustness: Tk callback exceptions captured via `report_callback_exception`, `root.destroy` deferred with `after_idle` (macOS focus fix), zero-area click prints a distinguishing notice, and mss shim uses `hasattr`. New §5.10 documents `display.py`. |
 
 ---
 
@@ -133,7 +134,8 @@ screenrecon/
     ├── __init__.py          # version
     ├── cli.py               # argument parsing, subcommand routing
     ├── config.py            # config load/save/validate/wizard
-    ├── platform.py          # cross-platform cursor position + display geometry
+    ├── platform.py          # cross-platform cursor position + DPI awareness
+    ├── display.py           # monitor enumeration + virtual-desktop bounds (mss shim)
     ├── picker.py            # interactive drag-to-select region picker (wizard-only)
     ├── capture.py           # mss region capture
     ├── vision.py            # AI calls and error translation
@@ -432,22 +434,51 @@ release the picked region is returned in the same virtual-desktop pixel space
 zero-area click all cancel and return `None`, and the wizard then falls back to
 a 640×480 region centred on whichever monitor currently holds the cursor.
 
+**One entry point for the wizard.** `picker.pick_region_or_default(current, factory)`
+owns the whole "give me a region, one way or another" concern: open the picker,
+report which monitor a successful drag landed on, compute the centred default
+on cancel, keep `current` when either the picker or the cursor cannot be read.
+The wizard only prints "Current: ..." and asks Y/N, then delegates.
+
 **Seam for tests.** The wizard talks to the picker through the `RegionPicker`
 protocol (`pick() -> Region | None`). Production wires in `TkDragPicker`; tests
 wire in `ScriptedPicker`, which returns a preset region without opening a
 window. This keeps NFR-6 intact — the test suite still touches neither the
-network nor the screen.
+network nor the screen. `None` deliberately conflates Esc / window-closed /
+zero-area click because the wizard reacts the same way to all three; a
+zero-area click still prints a distinguishing notice so a stray click is not
+silently rewritten as "user pressed Esc".
 
-**Multi-monitor.** One overlay covers `mss.monitors[0]` (the union of every
-monitor), so mouse-root coordinates from tkinter are already virtual-desktop
-pixels; nothing per-monitor is needed on the write path. `platform.enumerate_monitors()`
-and `platform.find_monitor_containing()` power the "which monitor did the region
-land on?" feedback and the Esc-fallback centering.
+**Multi-monitor.** One overlay covers `display.virtual_desktop_bounds()` (the
+union of every monitor), so mouse-root coordinates from tkinter are already
+virtual-desktop pixels; nothing per-monitor is needed on the write path.
+`display.enumerate_monitors()` and `display.find_monitor_index_containing()`
+power the "which monitor did the region land on?" feedback and the Esc-fallback
+centring.
+
+**Robustness.** `root.destroy()` is deferred with `after_idle` inside mouse and
+Esc callbacks — destroying a `-topmost + overrideredirect` toplevel from inside
+its own event handler has historically caused focus lockups on macOS. Callback
+exceptions are captured via `root.report_callback_exception` and re-raised as
+`PickerError` after `mainloop` exits, instead of vanishing into Tk's default
+traceback print. A `try/finally` around `mainloop` runs a suppressed
+`root.destroy()` so a leaked root cannot poison a second `TkDragPicker` on the
+same thread.
 
 **Transparency fallback.** `-alpha 0.3` may be ignored on a bare X11 session
 without a compositor. The overlay stays black in that case; the red drag
 rectangle is still visible and coordinates are still correct — degrades to
 "blind pick" rather than failing.
+
+### 5.10 Display geometry (`display.py`)
+
+Enumerates physical monitors and reports the union of their bounds. Both are
+thin wrappers over one `mss` call that also runs `platform.ensure_dpi_awareness()`
+first, so coordinates match the cursor path. Split out from `platform.py` in
+SR-7 so the cursor path (a small ctypes / pyobjc / xlib layer) no longer
+implicitly depends on `mss`. `capture.py` opens its own `mss` context per
+frame and does not go through this module; the picker and the wizard's
+post-pick "on monitor N of M" report do.
 
 ---
 

@@ -61,10 +61,10 @@ Wayland is explicitly unsupported — see [§5.2](#52-cursor-position-platformpy
 
 > **Coordinate space.** v1.0 specified "logical pixels". That turned out to be
 > the wrong commitment — see [§5.2](#52-cursor-position-platformpy). The
-> guarantee that matters is *self-consistency*: the cursor and the capture are
-> read through the same coordinate space, so the numbers `--show-cursor` reports
-> are exactly the numbers to put in `region`. On Windows those numbers are
-> physical pixels.
+> guarantee that matters is *self-consistency*: the picker (§5.9) and the
+> capture are read through the same coordinate space, so the numbers the picker
+> returns are exactly the numbers the watch loop acts on. On Windows those
+> numbers are physical pixels.
 
 ---
 
@@ -133,7 +133,8 @@ screenrecon/
     ├── __init__.py          # version
     ├── cli.py               # argument parsing, subcommand routing
     ├── config.py            # config load/save/validate/wizard
-    ├── platform.py          # cross-platform cursor position
+    ├── platform.py          # cross-platform cursor position + display geometry
+    ├── picker.py            # interactive drag-to-select region picker (wizard-only)
     ├── capture.py           # mss region capture
     ├── vision.py            # AI calls and error translation
     ├── notify.py            # Telegram delivery

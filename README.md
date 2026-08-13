@@ -136,16 +136,14 @@ a full disk does not stop the Telegram push.
 
 ## How coordinates work
 
-`--show-cursor` and the watch loop read the cursor through the same API as the capture
-uses, so the numbers you read in `--show-cursor` are exactly the numbers to put in
-`region`.
+The setup picker and the watch loop read the screen through the same API as the
+capture, so the coordinates the picker returns are exactly what the watcher acts on.
 
-On Windows, the process declares per-monitor DPI awareness before the first cursor read,
-so both modes report the same **physical** pixels on a scaled display. One consequence
-worth knowing: coordinates are physical, so a region recorded at 150% scaling will point
-somewhere else if you later change the display scaling, and coordinates read from a
-non-DPI-aware tool (Paint, many older apps) will not match. Re-run `--show-cursor` after
-changing scaling.
+On Windows, the process declares per-monitor DPI awareness before the first
+capture, so the picker reports **physical** pixels on a scaled display. One
+consequence worth knowing: coordinates are physical, so a region recorded at
+150% scaling will point somewhere else if you later change the display scaling.
+Re-run `screenrecon --configure` after changing scaling.
 
 A region that falls outside the screen is not an error for the capture backend — it
 returns black. ScreenRecon checks the region against the desktop at startup and warns if

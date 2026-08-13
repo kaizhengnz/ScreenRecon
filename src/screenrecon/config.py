@@ -318,38 +318,14 @@ def _ask_float(label: str, current: Any, *, minimum: float | None = None) -> flo
     raise WizardAborted(f"{label}: too many invalid answers, giving up.")
 
 
-def _centered_default_or_none() -> dict[str, int] | None:
-    """A ``picker.DEFAULT_WIDTH x picker.DEFAULT_HEIGHT`` region centred on the
-    monitor that currently holds the cursor, or ``None`` when the cursor cannot
-    be read (locked screen, missing X display, missing dependency).
-
-    Callers pick the fallback that fits their context — "Current" for a
-    first-time wizard start, "keep the existing region" for an Esc cancel.
-    """
-    from . import picker as picker_module
-    from . import platform as cursor_platform
-
-    try:
-        cursor_platform.ensure_reader()
-        x, y = cursor_platform.get_cursor_pos()
-    except (cursor_platform.CursorError, cursor_platform.CursorUnavailable):
-        return None
-    return picker_module.default_region_at(x, y)
-
-
-def _pick_region_step(
+def _prompt_region(
     current: dict[str, Any],
     picker_factory: PickerFactory | None,
 ) -> dict[str, Any]:
-    """Update the watched region via the interactive picker, or keep the current one.
+    """Print the current region, offer to update it, and delegate to the picker.
 
-    Behaviour:
-    - Prompt "Update this region? [Y/n]". Answer 'n' keeps the current value.
-    - Otherwise open the picker. A successful drag becomes the new region.
-    - If the picker returns nothing (Esc, close, or zero-area click), fall back
-      to a centred default; if the cursor is unreadable, keep the current one.
-    - If the picker cannot open at all (no display, missing tkinter), warn and
-      keep the current region.
+    Kept intentionally thin — the picker owns the whole "give me a region"
+    concern (open, cancel-fallback, PickerError-fallback, monitor reporting).
     """
     from . import picker as picker_module
 
@@ -360,53 +336,7 @@ def _pick_region_step(
     answer = _ask("   Update this region? [Y/n]", "Y").strip().lower()
     if answer in ("n", "no"):
         return current
-
-    factory = picker_factory or picker_module.default_picker
-    ui.info(
-        "   Opening the picker. Drag a rectangle, or press Esc to use "
-        f"{picker_module.DEFAULT_WIDTH}x{picker_module.DEFAULT_HEIGHT} "
-        "centered on the current monitor."
-    )
-    try:
-        picked = factory().pick()
-    except picker_module.PickerError as exc:
-        ui.warn(f"   {exc}")
-        ui.info("   Keeping the current region.")
-        return current
-
-    if picked is not None:
-        _report_picked_region(picked)
-        return picked
-
-    region = _centered_default_or_none()
-    if region is None:
-        ui.warn("   Could not read cursor position for the default region.")
-        ui.info("   Keeping the current region.")
-        return current
-    ui.info(
-        f"   Using default: left={region['left']} top={region['top']} "
-        f"width={region['width']} height={region['height']}"
-    )
-    return region
-
-
-def _report_picked_region(region: dict[str, Any]) -> None:
-    """Print the picked region and, when known, which monitor it landed on."""
-    from . import platform as cursor_platform
-
-    line = (
-        f"   Picked: left={region['left']} top={region['top']} "
-        f"width={region['width']} height={region['height']}"
-    )
-    monitors = cursor_platform.enumerate_monitors()
-    if monitors:
-        cx = region["left"] + region["width"] // 2
-        cy = region["top"] + region["height"] // 2
-        found = cursor_platform.find_monitor_index_containing(cx, cy, monitors)
-        if found is not None:
-            index, _ = found
-            line += f" (on monitor {index} of {len(monitors)})"
-    ui.info(line)
+    return picker_module.pick_region_or_default(current, picker_factory)
 
 
 def run_wizard(
@@ -443,7 +373,7 @@ def _run_wizard(
     path: str | os.PathLike[str] | None = None,
     picker_factory: PickerFactory | None = None,
 ) -> int:
-    from . import notify, vision  # imported lazily so --help never loads the SDK
+    from . import notify, picker as picker_module, vision  # lazy: --help skips SDK
 
     resolved = config_path(path)
     raw = read_raw(resolved)
@@ -460,7 +390,7 @@ def _run_wizard(
         k in saved_region for k in ("left", "top", "width", "height")
     )
     if not has_complete_region:
-        centered = _centered_default_or_none()
+        centered = picker_module.default_centered_region_or_none()
         if centered is not None:
             cfg["region"] = centered
 
@@ -469,7 +399,7 @@ def _run_wizard(
     ui.info("Press Enter to keep the current value.\n")
 
     ui.info("1) Watched region")
-    cfg["region"] = _pick_region_step(dict(cfg["region"]), picker_factory)
+    cfg["region"] = _prompt_region(dict(cfg["region"]), picker_factory)
 
     ui.info("\n2) Trigger and model")
     cfg["dwell_seconds"] = _ask_float("  dwell seconds", cfg["dwell_seconds"], minimum=0)

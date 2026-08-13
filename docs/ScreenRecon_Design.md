@@ -3,7 +3,7 @@
 | Item | Value |
 |---|---|
 | Project | ScreenRecon |
-| Document version | 0.1.0 |
+| Document version | 0.1.1 |
 | Date | 2026-08-13 |
 | Status | Implemented |
 | Audience | Developers |
@@ -14,6 +14,7 @@
 |---|---|---|---|
 | v1.0 draft | 2026-08-12 | Chinese | Initial draft, written before implementation. Not part of this versioned series. |
 | **0.1.0** | 2026-08-13 | English | First released design document. Translated to English and reconciled with the shipped implementation: licence changed to Apache 2.0, user-facing language changed to English, default model updated, and the design corrected wherever the draft's assumptions turned out to be wrong. Every deviation is listed in [§11](#11-changes-from-the-v10-draft). |
+| **0.1.1** | 2026-08-13 | English | §7 rewritten: release flow moves from a single direct-push workflow to a two-workflow PR-based flow (`release-prepare.yml` opens a release PR with auto-merge; `release-publish.yml` runs test / build / tag / publish on the merge commit). Motivated by branch-protection alignment — `github-actions[bot]` cannot bypass rulesets, so bumps must land via PR like every other change. |
 
 ---
 
@@ -446,6 +447,8 @@ Full detail, including the reporting process, is in `SECURITY.md`.
 
 ## 7. Packaging and release
 
+### 7.1 Package
+
 - `pyproject.toml` with hatchling;
   `[project.scripts] screenrecon = "screenrecon.cli:main"`
 - Conditional dependencies:
@@ -456,10 +459,35 @@ Full detail, including the reporting process, is in `SECURITY.md`.
 - Python `>=3.10`
 - Licence: **Apache 2.0** (v1.0 specified MIT). `LICENSE` and `NOTICE` both ship
   in the distribution, as Apache 2.0 §4(d) requires.
-- Release: GitHub Release plus PyPI. The package name is subject to
-  availability; if `screenrecon` is taken, fall back to `screen-recon` and
-  rename the command to match.
 - `[project.urls]` must point at the real repository before publishing.
+
+### 7.2 Release flow
+
+Two workflows, connected by a PR merge on `main`:
+
+1. **`release-prepare.yml`** (trigger: `workflow_dispatch`, `bump` input =
+   `patch` (default) / `minor` / `major`) —
+   bumps `__version__` via `scripts/bump_version.py`, syncs the new value into
+   this doc's `Document version` header row, commits both files on a fresh
+   `release/vX.Y.Z` branch as `github-actions[bot]`, opens a PR to `main`, and
+   enables auto-merge (squash) on it. The workflow ends there; the PR does the
+   rest.
+2. **`release-publish.yml`** (trigger: `push` to `main`) — inspects the head
+   commit's subject and only proceeds if it matches
+   `^chore: release v(\d+\.\d+\.\d+)$` (i.e. the auto-merged release PR). It
+   then runs, in order: `test` (pytest), `build` (sdist + wheel + twine check),
+   `tag` (`vX.Y.Z` pushed as `github-actions[bot]`), `publish` (PyPI trusted
+   publishing via the `pypi` environment).
+
+Rationale for the split: `github-actions[bot]` cannot be added to a ruleset
+bypass list (by GitHub design, see [community#25305](https://github.com/orgs/community/discussions/25305)),
+so every change on `main` — including a version bump — has to arrive via PR.
+The two-workflow design keeps the release fully automated (one
+`workflow_dispatch` click still finishes on PyPI) while satisfying the
+"everything through PR" rule.
+
+Package name: if `screenrecon` becomes unavailable on PyPI, fall back to
+`screen-recon` and rename the CLI command to match.
 
 ---
 

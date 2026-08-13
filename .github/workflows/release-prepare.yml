@@ -1,0 +1,60 @@
+name: Prepare release PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version segment to bump (default: patch. minor/major means you are consciously bumping the 0.1 prefix.)"
+        required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  open-release-pr:
+    name: Open release PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Bump __version__
+        id: bump
+        run: python scripts/bump_version.py ${{ inputs.bump }}
+      - name: Sync Document version in design doc
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+        run: |
+          sed -i "s/^| Document version | .* |/| Document version | ${NEW_VERSION} |/" docs/ScreenRecon_Design.md
+      - name: Commit on release branch and push
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "release/v${NEW_VERSION}"
+          git add src/screenrecon/__init__.py docs/ScreenRecon_Design.md
+          git commit -m "chore: release v${NEW_VERSION}"
+          git push -u origin "release/v${NEW_VERSION}"
+      - name: Open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+        run: |
+          gh pr create \
+            --base main \
+            --head "release/v${NEW_VERSION}" \
+            --title "chore: release v${NEW_VERSION}" \
+            --body "Automated release bump for v${NEW_VERSION}. Auto-merges once branch protection allows; publish to PyPI runs on the merge commit."
+      - name: Enable auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+        run: gh pr merge --auto --squash "release/v${NEW_VERSION}"

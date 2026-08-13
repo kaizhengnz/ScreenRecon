@@ -5,10 +5,18 @@ from __future__ import annotations
 import getpass
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import storage, ui
+
+if TYPE_CHECKING:
+    from . import picker as picker_module
+
+    PickerFactory = Callable[[], picker_module.RegionPicker]
+else:
+    PickerFactory = Callable[[], Any]
 
 
 def _default_config_path() -> Path:
@@ -310,10 +318,110 @@ def _ask_float(label: str, current: Any, *, minimum: float | None = None) -> flo
     raise WizardAborted(f"{label}: too many invalid answers, giving up.")
 
 
-def run_wizard(path: str | os.PathLike[str] | None = None) -> int:
-    """Ask for each field (Enter keeps the current value), then verify credentials online."""
+def _centered_default_or_none() -> dict[str, int] | None:
+    """A ``picker.DEFAULT_WIDTH x picker.DEFAULT_HEIGHT`` region centred on the
+    monitor that currently holds the cursor, or ``None`` when the cursor cannot
+    be read (locked screen, missing X display, missing dependency).
+
+    Callers pick the fallback that fits their context — "Current" for a
+    first-time wizard start, "keep the existing region" for an Esc cancel.
+    """
+    from . import picker as picker_module
+    from . import platform as cursor_platform
+
     try:
-        return _run_wizard(path)
+        cursor_platform.ensure_reader()
+        x, y = cursor_platform.get_cursor_pos()
+    except (cursor_platform.CursorError, cursor_platform.CursorUnavailable):
+        return None
+    return picker_module.default_region_at(x, y)
+
+
+def _pick_region_step(
+    current: dict[str, Any],
+    picker_factory: PickerFactory | None,
+) -> dict[str, Any]:
+    """Update the watched region via the interactive picker, or keep the current one.
+
+    Behaviour:
+    - Prompt "Update this region? [Y/n]". Answer 'n' keeps the current value.
+    - Otherwise open the picker. A successful drag becomes the new region.
+    - If the picker returns nothing (Esc, close, or zero-area click), fall back
+      to a centred default; if the cursor is unreadable, keep the current one.
+    - If the picker cannot open at all (no display, missing tkinter), warn and
+      keep the current region.
+    """
+    from . import picker as picker_module
+
+    ui.info(
+        f"   Current: left={current.get('left')} top={current.get('top')} "
+        f"width={current.get('width')} height={current.get('height')}"
+    )
+    answer = _ask("   Update this region? [Y/n]", "Y").strip().lower()
+    if answer in ("n", "no"):
+        return current
+
+    factory = picker_factory or picker_module.default_picker
+    ui.info(
+        "   Opening the picker. Drag a rectangle, or press Esc to use "
+        f"{picker_module.DEFAULT_WIDTH}x{picker_module.DEFAULT_HEIGHT} "
+        "centered on the current monitor."
+    )
+    try:
+        picked = factory().pick()
+    except picker_module.PickerError as exc:
+        ui.warn(f"   {exc}")
+        ui.info("   Keeping the current region.")
+        return current
+
+    if picked is not None:
+        _report_picked_region(picked)
+        return picked
+
+    region = _centered_default_or_none()
+    if region is None:
+        ui.warn("   Could not read cursor position for the default region.")
+        ui.info("   Keeping the current region.")
+        return current
+    ui.info(
+        f"   Using default: left={region['left']} top={region['top']} "
+        f"width={region['width']} height={region['height']}"
+    )
+    return region
+
+
+def _report_picked_region(region: dict[str, Any]) -> None:
+    """Print the picked region and, when known, which monitor it landed on."""
+    from . import platform as cursor_platform
+
+    line = (
+        f"   Picked: left={region['left']} top={region['top']} "
+        f"width={region['width']} height={region['height']}"
+    )
+    monitors = cursor_platform.enumerate_monitors()
+    if monitors:
+        cx = region["left"] + region["width"] // 2
+        cy = region["top"] + region["height"] // 2
+        found = cursor_platform.find_monitor_index_containing(cx, cy, monitors)
+        if found is not None:
+            index, _ = found
+            line += f" (on monitor {index} of {len(monitors)})"
+    ui.info(line)
+
+
+def run_wizard(
+    path: str | os.PathLike[str] | None = None,
+    *,
+    picker_factory: PickerFactory | None = None,
+) -> int:
+    """Ask for each field (Enter keeps the current value), then verify credentials online.
+
+    ``picker_factory`` is a seam for tests: pass a callable returning a
+    :class:`picker.ScriptedPicker` (or any :class:`picker.RegionPicker`). Production
+    leaves it ``None`` and the real :class:`picker.TkDragPicker` is used.
+    """
+    try:
+        return _run_wizard(path, picker_factory)
     except WizardAborted as exc:
         ui.error(str(exc))
         ui.error("Nothing was saved.")
@@ -331,23 +439,37 @@ def run_wizard(path: str | os.PathLike[str] | None = None) -> int:
         return 1
 
 
-def _run_wizard(path: str | os.PathLike[str] | None = None) -> int:
+def _run_wizard(
+    path: str | os.PathLike[str] | None = None,
+    picker_factory: PickerFactory | None = None,
+) -> int:
     from . import notify, vision  # imported lazily so --help never loads the SDK
 
     resolved = config_path(path)
-    cfg = merge_defaults(read_raw(resolved))
+    raw = read_raw(resolved)
+    cfg = merge_defaults(raw)
+
+    # First-time (and partial-config) users have no complete saved region, and
+    # the merge fills in the hardcoded 100/100/600/400 DEFAULTS for the missing
+    # keys. Replace that with a live centered region so the "Current" line
+    # reflects something sensible (and, if they answer "n" to the picker, that
+    # centered region is what gets saved). If the cursor cannot be read at all,
+    # keep the merged DEFAULTS so the wizard still starts.
+    saved_region = raw.get("region")
+    has_complete_region = isinstance(saved_region, dict) and all(
+        k in saved_region for k in ("left", "top", "width", "height")
+    )
+    if not has_complete_region:
+        centered = _centered_default_or_none()
+        if centered is not None:
+            cfg["region"] = centered
 
     ui.rule("ScreenRecon setup")
     ui.info(f"Config file: {resolved}")
     ui.info("Press Enter to keep the current value.\n")
 
-    ui.info("1) Watched region (run 'screenrecon --show-cursor' to read coordinates)")
-    region = dict(cfg["region"])
-    region["left"] = _ask_int("  region left", region.get("left"))
-    region["top"] = _ask_int("  region top", region.get("top"))
-    region["width"] = _ask_int("  region width", region.get("width"), minimum=1)
-    region["height"] = _ask_int("  region height", region.get("height"), minimum=1)
-    cfg["region"] = region
+    ui.info("1) Watched region")
+    cfg["region"] = _pick_region_step(dict(cfg["region"]), picker_factory)
 
     ui.info("\n2) Trigger and model")
     cfg["dwell_seconds"] = _ask_float("  dwell seconds", cfg["dwell_seconds"], minimum=0)

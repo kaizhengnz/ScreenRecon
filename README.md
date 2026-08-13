@@ -43,13 +43,11 @@ pip install -e ".[dev]"
 ## Quick start
 
 ```bash
-# 1. Find the coordinates of the area you want to watch.
-screenrecon --show-cursor
-
-# 2. Fill in region, credentials and save directory.
+# 1. Set up: pick the region interactively (drag a rectangle across the screen),
+#    then fill in credentials and save directory.
 screenrecon --configure
 
-# 3. Start watching.
+# 2. Start watching.
 screenrecon
 ```
 
@@ -62,8 +60,7 @@ cursor there will never re-trigger.
 | Command | What it does |
 | --- | --- |
 | `screenrecon` | Watch the configured region |
-| `screenrecon --configure` | Interactive setup; verifies both sets of credentials online |
-| `screenrecon --show-cursor` | Print live cursor coordinates, marking when they are inside the configured region |
+| `screenrecon --configure` | Interactive setup: drag-to-select region picker, then credentials (verified online) |
 | `screenrecon --mode NAME` | Watch using the `prompts.NAME` preset instead of the default prompt |
 | `screenrecon ask "question"` | Capture once, answer one question, exit |
 | `screenrecon ask` | Capture once, then keep asking questions about that screenshot |
@@ -139,16 +136,14 @@ a full disk does not stop the Telegram push.
 
 ## How coordinates work
 
-`--show-cursor` and the watch loop read the cursor through the same API as the capture
-uses, so the numbers you read in `--show-cursor` are exactly the numbers to put in
-`region`.
+The setup picker and the watch loop read the screen through the same API as the
+capture, so the coordinates the picker returns are exactly what the watcher acts on.
 
-On Windows, the process declares per-monitor DPI awareness before the first cursor read,
-so both modes report the same **physical** pixels on a scaled display. One consequence
-worth knowing: coordinates are physical, so a region recorded at 150% scaling will point
-somewhere else if you later change the display scaling, and coordinates read from a
-non-DPI-aware tool (Paint, many older apps) will not match. Re-run `--show-cursor` after
-changing scaling.
+On Windows, the process declares per-monitor DPI awareness before the first
+capture, so the picker reports **physical** pixels on a scaled display. One
+consequence worth knowing: coordinates are physical, so a region recorded at
+150% scaling will point somewhere else if you later change the display scaling.
+Re-run `screenrecon --configure` after changing scaling.
 
 A region that falls outside the screen is not an error for the capture backend — it
 returns black. ScreenRecon checks the region against the desktop at startup and warns if

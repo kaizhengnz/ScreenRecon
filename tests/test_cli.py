@@ -40,7 +40,6 @@ def calls(monkeypatch):
 
     monkeypatch.setattr(watcher, "run", lambda cfg, prompt: record("watch", prompt))
     monkeypatch.setattr(watcher, "run_ask", lambda cfg, question: record("ask", question))
-    monkeypatch.setattr(watcher, "run_show_cursor", lambda cfg: record("cursor", cfg))
     monkeypatch.setattr(config, "run_wizard", lambda path: record("wizard", path))
     return recorded
 
@@ -80,20 +79,22 @@ def test_ask_with_a_mode_uses_the_preset_as_the_question(config_file, calls):
     assert calls["ask"] == "find errors"
 
 
-def test_show_cursor_works_without_any_config(tmp_path, calls, monkeypatch):
-    """Step 1 of the quick start runs before anything is configured."""
-    monkeypatch.delenv(config.ENV_API_KEY, raising=False)
-    assert cli.main(["--config", str(tmp_path / "missing.json"), "--show-cursor"]) == 0
-    # No file yet, so the defaults apply and the region marker still works.
-    assert calls["cursor"]["region"] == config.DEFAULTS["region"]
+def test_show_cursor_flag_gets_a_friendly_error(capsys):
+    """--show-cursor was removed; the setup wizard now has a picker. Guide the user."""
+    assert cli.main(["--show-cursor"]) == 2
+    err = capsys.readouterr().err
+    assert "--show-cursor was removed" in err
+    assert "--configure" in err
 
 
-def test_show_cursor_survives_a_corrupt_config(tmp_path, calls, monkeypatch):
-    monkeypatch.delenv(config.ENV_API_KEY, raising=False)
-    path = tmp_path / "config.json"
-    path.write_text("{ not json", encoding="utf-8")
-    assert cli.main(["--config", str(path), "--show-cursor"]) == 0
-    assert calls["cursor"] is None
+@pytest.mark.parametrize("with_flag", ["--help", "-h", "--version"])
+def test_show_cursor_does_not_hijack_help_or_version(with_flag, capsys):
+    """`--show-cursor --help` must still show help — help/version always work."""
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["--show-cursor", with_flag])
+    assert excinfo.value.code == 0
+    err = capsys.readouterr().err
+    assert "--show-cursor was removed" not in err
 
 
 # --------------------------------------------------------------------------- #
@@ -104,11 +105,8 @@ def test_show_cursor_survives_a_corrupt_config(tmp_path, calls, monkeypatch):
 @pytest.mark.parametrize(
     "argv",
     [
-        ["--configure", "--show-cursor"],
         ["--configure", "ask", "q"],
-        ["--show-cursor", "ask", "q"],
         ["--mode", "log", "--configure"],
-        ["--mode", "log", "--show-cursor"],
     ],
 )
 def test_conflicting_flags_exit_two(argv):

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 import time
 from collections.abc import Mapping
 from typing import Any
@@ -266,67 +265,6 @@ def run(cfg: Mapping[str, Any], prompt: str) -> int:
             time.sleep(POLL_INTERVAL)
     except KeyboardInterrupt:
         ui.info("\nScreenRecon stopped.")
-        return 0
-
-
-def run_show_cursor(cfg: Mapping[str, Any] | None = None) -> int:
-    """Print live cursor coordinates to help pick a region (FR-12)."""
-    region = (cfg or {}).get("region") if cfg else None
-    trigger = None
-    if isinstance(region, dict):
-        try:
-            trigger = DwellTrigger(region, 1)
-        except (KeyError, TypeError, ValueError):
-            trigger = None
-
-    try:
-        platform.ensure_reader()
-    except platform.CursorError as exc:
-        ui.error(str(exc))
-        return 1
-
-    # This is the mode users are in while choosing coordinates, so an off-screen
-    # region or a missing permission is most actionable here.
-    check_environment(cfg)
-
-    ui.rule("Cursor position (Ctrl+C to quit)")
-    if trigger is not None:
-        ui.info(f"Configured region: {_format_region(region)}")
-    ui.info("Point at the top-left and bottom-right of your target area and note both readings.\n")
-
-    # Overwriting one line only makes sense on a terminal; when redirected it
-    # would produce a single enormous line.
-    interactive = sys.stdout.isatty()
-    waiting = False
-
-    try:
-        while True:
-            try:
-                x, y = platform.get_cursor_pos()
-            except platform.CursorUnavailable as exc:
-                if not waiting:
-                    if interactive:
-                        print()
-                    ui.warn(f"Cursor unreadable, waiting: {exc}")
-                    waiting = True
-                time.sleep(UNAVAILABLE_POLL_INTERVAL)
-                continue
-            except platform.CursorError as exc:
-                if interactive:
-                    print()
-                ui.error(str(exc))
-                return 1
-            waiting = False
-            marker = ""
-            if trigger is not None:
-                marker = "  <- inside region" if trigger.contains((x, y)) else "                  "
-            line = f"x={x:<6d} y={y:<6d}{marker}"
-            print(f"\r{line}" if interactive else line, end="" if interactive else "\n", flush=True)
-            time.sleep(POLL_INTERVAL)
-    except KeyboardInterrupt:
-        if interactive:
-            print()
-        ui.info("Stopped.")
         return 0
 
 

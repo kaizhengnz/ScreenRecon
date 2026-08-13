@@ -152,7 +152,7 @@ def test_wizard_shows_centered_default_when_no_region_is_saved(
     monitors = [{"left": 0, "top": 0, "width": 1920, "height": 1080}]
     monkeypatch.setattr("screenrecon.platform.enumerate_monitors", lambda: monitors)
     monkeypatch.setattr(
-        "screenrecon.platform.find_monitor_containing", lambda x, y: monitors[0]
+        "screenrecon.platform.find_monitor_containing", lambda x, y, mons=None: monitors[0]
     )
     scripted.extend(
         [
@@ -245,7 +245,7 @@ def test_wizard_falls_back_to_default_region_on_picker_cancel(
     monitors = [{"left": 0, "top": 0, "width": 1920, "height": 1080}]
     monkeypatch.setattr("screenrecon.platform.enumerate_monitors", lambda: monitors)
     monkeypatch.setattr(
-        "screenrecon.platform.find_monitor_containing", lambda x, y: monitors[0]
+        "screenrecon.platform.find_monitor_containing", lambda x, y, mons=None: monitors[0]
     )
 
     assert config.run_wizard(path, picker_factory=_picker_factory(None)) == 0

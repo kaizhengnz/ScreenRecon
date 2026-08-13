@@ -40,7 +40,7 @@ def test_default_region_centers_on_the_monitor_containing_the_cursor(monkeypatch
     monkeypatch.setattr("screenrecon.platform.enumerate_monitors", lambda: monitors)
     monkeypatch.setattr(
         "screenrecon.platform.find_monitor_containing",
-        lambda x, y: monitors[1] if x >= 1920 else monitors[0],
+        lambda x, y, mons=None: monitors[1] if x >= 1920 else monitors[0],
     )
 
     # Cursor is somewhere on monitor 2 (the 2560x1440 one).
@@ -55,7 +55,9 @@ def test_default_region_centers_on_the_monitor_containing_the_cursor(monkeypatch
 def test_default_region_falls_back_to_first_monitor_when_cursor_is_off_screen(monkeypatch):
     monitors = [{"left": 0, "top": 0, "width": 1920, "height": 1080}]
     monkeypatch.setattr("screenrecon.platform.enumerate_monitors", lambda: monitors)
-    monkeypatch.setattr("screenrecon.platform.find_monitor_containing", lambda x, y: None)
+    monkeypatch.setattr(
+        "screenrecon.platform.find_monitor_containing", lambda x, y, mons=None: None
+    )
 
     region = picker.default_region_at(-500, -500)  # off-screen
     assert region["left"] == (1920 - picker.DEFAULT_WIDTH) // 2
@@ -65,7 +67,9 @@ def test_default_region_falls_back_to_first_monitor_when_cursor_is_off_screen(mo
 def test_default_region_falls_back_to_cursor_when_no_monitors_are_known(monkeypatch):
     """Extremely defensive — headless CI or a mss quirk. Region still valid."""
     monkeypatch.setattr("screenrecon.platform.enumerate_monitors", lambda: [])
-    monkeypatch.setattr("screenrecon.platform.find_monitor_containing", lambda x, y: None)
+    monkeypatch.setattr(
+        "screenrecon.platform.find_monitor_containing", lambda x, y, mons=None: None
+    )
 
     region = picker.default_region_at(42, 99)
     assert region == {

@@ -259,19 +259,17 @@ def reset_reader() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def enumerate_monitors() -> list[dict[str, int]]:
-    """Return the physical monitors as ``[{left, top, width, height}, ...]``.
-
-    Coordinates are in the same virtual-desktop space as ``get_cursor_pos()``.
-    The list excludes ``mss.monitors[0]`` (the union) — only real screens are
-    returned. Empty list means mss reported no physical monitors, which should
-    not happen on any supported platform.
-    """
-    ensure_dpi_awareness()
+def _mss_factory():
+    """Construct an mss instance across versions (``mss.mss`` is dropped in mss 11)."""
     import mss  # imported lazily; --help / --version must not load it
 
-    factory = getattr(mss, "MSS", None) or mss.mss  # mss 11 drops the lowercase form
-    with factory() as sct:
+    return getattr(mss, "MSS", None) or mss.mss
+
+
+def _read_monitors() -> list[dict[str, int]]:
+    """Return ``sct.monitors`` as plain ints — index 0 is the virtual-desktop union."""
+    ensure_dpi_awareness()
+    with _mss_factory()() as sct:
         return [
             {
                 "left": int(m["left"]),
@@ -279,13 +277,39 @@ def enumerate_monitors() -> list[dict[str, int]]:
                 "width": int(m["width"]),
                 "height": int(m["height"]),
             }
-            for m in sct.monitors[1:]
+            for m in sct.monitors
         ]
 
 
-def find_monitor_containing(x: int, y: int) -> dict[str, int] | None:
-    """Return the monitor whose bounds contain ``(x, y)``, or ``None`` if none does."""
-    for mon in enumerate_monitors():
+def enumerate_monitors() -> list[dict[str, int]]:
+    """Return the physical monitors as ``[{left, top, width, height}, ...]``.
+
+    Coordinates are in the same virtual-desktop space as ``get_cursor_pos()``.
+    Excludes ``mss.monitors[0]`` (the union). Empty list means mss reported no
+    physical monitors, which should not happen on any supported platform.
+    """
+    return _read_monitors()[1:]
+
+
+def virtual_desktop_bounds() -> dict[str, int]:
+    """Return the union of every monitor as ``{left, top, width, height}``.
+
+    Used by the region picker to size a single overlay across every screen.
+    Centralised here so the picker inherits ``ensure_dpi_awareness()`` and the
+    mss-version shim without opening its own mss context.
+    """
+    return _read_monitors()[0]
+
+
+def find_monitor_containing(
+    x: int, y: int, monitors: list[dict[str, int]] | None = None
+) -> dict[str, int] | None:
+    """Return the monitor whose bounds contain ``(x, y)``, or ``None`` if none does.
+
+    Pass ``monitors`` to reuse an already-fetched list; otherwise this function
+    fetches one itself (each fetch spins up a fresh mss instance).
+    """
+    for mon in monitors if monitors is not None else enumerate_monitors():
         if (
             mon["left"] <= x < mon["left"] + mon["width"]
             and mon["top"] <= y < mon["top"] + mon["height"]

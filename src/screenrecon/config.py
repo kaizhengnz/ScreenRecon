@@ -318,6 +318,22 @@ def _ask_float(label: str, current: Any, *, minimum: float | None = None) -> flo
     raise WizardAborted(f"{label}: too many invalid answers, giving up.")
 
 
+def _smart_initial_region(cursor_platform: Any, picker_module: Any) -> dict[str, int]:
+    """Return a ``DEFAULT_PICKED_WIDTH x DEFAULT_PICKED_HEIGHT`` region centered
+    on the monitor holding the cursor, so a first-time user's "Current" line
+    shows something sensible instead of the hardcoded 100/100/600/400 defaults.
+
+    Falls back to the hardcoded DEFAULTS when the cursor cannot be read (e.g.
+    a locked screen or a missing X display), since the wizard must still start.
+    """
+    try:
+        cursor_platform.ensure_reader()
+        x, y = cursor_platform.get_cursor_pos()
+    except (cursor_platform.CursorError, cursor_platform.CursorUnavailable):
+        return dict(DEFAULTS["region"])
+    return picker_module.default_region_at(x, y)
+
+
 def _pick_region_step(
     current: dict[str, Any],
     picker_factory: PickerFactory | None,
@@ -433,9 +449,19 @@ def _run_wizard(
     picker_factory: PickerFactory | None = None,
 ) -> int:
     from . import notify, vision  # imported lazily so --help never loads the SDK
+    from . import picker as picker_module
+    from . import platform as cursor_platform
 
     resolved = config_path(path)
-    cfg = merge_defaults(read_raw(resolved))
+    raw = read_raw(resolved)
+    cfg = merge_defaults(raw)
+
+    # First-time users have no saved region yet, and the merge fills in the
+    # hardcoded 100/100/600/400 DEFAULTS. Replace that with a live centered
+    # region so the "Current" line reflects a sensible default (and, if they
+    # answer "n" to the picker, that centered region is what gets saved).
+    if "region" not in raw:
+        cfg["region"] = _smart_initial_region(cursor_platform, picker_module)
 
     ui.rule("ScreenRecon setup")
     ui.info(f"Config file: {resolved}")

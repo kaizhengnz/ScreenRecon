@@ -139,6 +139,52 @@ def test_wizard_writes_every_answer(tmp_path, answers, offline, capsys):
     assert "123456:wizard-token" not in output
 
 
+def test_wizard_shows_centered_default_when_no_region_is_saved(
+    tmp_path, answers, offline, monkeypatch, capsys
+):
+    """First-time user (no config file) sees a 640x480 region centred on the
+    cursor's monitor as "Current", not the hardcoded 100/100/600/400.
+    """
+    scripted, _ = answers
+    path = tmp_path / "config.json"  # no file yet
+    monkeypatch.setattr("screenrecon.platform.ensure_reader", lambda: None)
+    monkeypatch.setattr("screenrecon.platform.get_cursor_pos", lambda: (500, 500))
+    monitors = [{"left": 0, "top": 0, "width": 1920, "height": 1080}]
+    monkeypatch.setattr("screenrecon.platform.enumerate_monitors", lambda: monitors)
+    monkeypatch.setattr(
+        "screenrecon.platform.find_monitor_containing", lambda x, y: monitors[0]
+    )
+    scripted.extend(
+        [
+            "n",  # decline the picker; keep the centred default that was shown
+            "3",
+            "claude-opus-5",
+            "p",
+            "k",
+            "t",
+            "c",
+            str(tmp_path),
+        ]
+    )
+
+    def exploding_factory():
+        raise AssertionError("picker was invoked despite user answering 'n'")
+
+    assert config.run_wizard(path, picker_factory=exploding_factory) == 0
+
+    expected = {
+        "left": (1920 - picker.DEFAULT_WIDTH) // 2,
+        "top": (1080 - picker.DEFAULT_HEIGHT) // 2,
+        "width": picker.DEFAULT_WIDTH,
+        "height": picker.DEFAULT_HEIGHT,
+    }
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["region"] == expected
+    out = capsys.readouterr().out
+    assert f"left={expected['left']}" in out
+    assert f"top={expected['top']}" in out
+
+
 def test_wizard_keeps_current_region_when_user_declines_the_picker(
     tmp_path, answers, offline
 ):

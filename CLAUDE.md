@@ -30,7 +30,7 @@
 - PR body contains `Closes #<n>` so merging auto-closes the issue.
 - On a feature branch, add new commits for iterative changes — do not `git commit --amend` and force-push. The PR's Commits tab should show the progression of decisions (add rule, then implement, then adjust, etc.). Squash merge at the end still collapses everything into a single commit on `main`.
 - Merge method: **squash merge** — keeps `main` linear, one commit per issue.
-- The single exception: release-plumbing PRs opened by `github-actions[bot]`. The release workflow (`release-prepare.yml`) creates a `release/vX.Y.Z` branch, bumps `__version__`, opens a PR to `main`, and enables auto-merge on it. These PRs are not tied to a tracking issue and do not follow the `SR-<issue#>-<slug>` branch naming.
+- The single exception: release-plumbing PRs opened by `github-actions[bot]`. They are not tied to a tracking issue, use a `release/vX.Y.Z` branch (not the `SR-<issue#>-<slug>` pattern), and keep the `chore: release vX.Y.Z` commit and PR title (colon retained so `release-publish.yml`'s detection regex stays anchored on it). See **Versioning & release** below for the flow.
 
 ## Versioning & release
 - Version source: `__version__` in `src/screenrecon/__init__.py`. Hatchling reads it dynamically. Never edit this directly to bump — always route through the release workflow.

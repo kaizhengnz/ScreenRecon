@@ -115,11 +115,14 @@ class TkDragPicker:
                     "width": int(width),
                     "height": int(height),
                 }
-            root.destroy()
+            # Deferred destroy: tearing down the toplevel from inside a mouse
+            # handler while -topmost + overrideredirect are set has historically
+            # caused focus lockups on macOS.
+            root.after_idle(root.destroy)
 
         def on_cancel(_event: Any = None) -> None:
             state["result"] = None
-            root.destroy()
+            root.after_idle(root.destroy)
 
         canvas.bind("<Button-1>", on_press)
         canvas.bind("<B1-Motion>", on_drag)

@@ -301,6 +301,29 @@ def virtual_desktop_bounds() -> dict[str, int]:
     return _read_monitors()[0]
 
 
+def find_monitor_index_containing(
+    x: int, y: int, monitors: list[dict[str, int]] | None = None
+) -> tuple[int, dict[str, int]] | None:
+    """Return ``(1-based-index, monitor)`` for the monitor containing ``(x, y)``,
+    or ``None`` if none does. Callers that need the index for user-facing text
+    ("on monitor 2 of 3") should use this rather than ``find_monitor_containing``
+    + ``list.index``, which relies on the returned dict being the same object as
+    an entry in the passed-in list.
+
+    Pass ``monitors`` to reuse an already-fetched list; otherwise this function
+    fetches one itself.
+    """
+    for index, mon in enumerate(
+        monitors if monitors is not None else enumerate_monitors(), start=1
+    ):
+        if (
+            mon["left"] <= x < mon["left"] + mon["width"]
+            and mon["top"] <= y < mon["top"] + mon["height"]
+        ):
+            return index, mon
+    return None
+
+
 def find_monitor_containing(
     x: int, y: int, monitors: list[dict[str, int]] | None = None
 ) -> dict[str, int] | None:
@@ -309,10 +332,5 @@ def find_monitor_containing(
     Pass ``monitors`` to reuse an already-fetched list; otherwise this function
     fetches one itself (each fetch spins up a fresh mss instance).
     """
-    for mon in monitors if monitors is not None else enumerate_monitors():
-        if (
-            mon["left"] <= x < mon["left"] + mon["width"]
-            and mon["top"] <= y < mon["top"] + mon["height"]
-        ):
-            return mon
-    return None
+    result = find_monitor_index_containing(x, y, monitors)
+    return None if result is None else result[1]

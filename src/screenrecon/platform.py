@@ -15,7 +15,8 @@ Two failure kinds are deliberately distinguished:
 
 Coordinate-system consistency: on Windows, mss marks the process DPI-aware, after
 which GetCursorPos reports physical pixels. This module declares DPI awareness
-first so that ``--show-cursor`` and the watch loop always agree, whichever runs.
+first so that the setup wizard's region picker and the watch loop always agree,
+whichever runs.
 
 Note: this module shadows the standard library's ``platform`` module by name (the
 layout is prescribed by design doc 4.1). Installed code is unaffected because all
@@ -251,3 +252,43 @@ def reset_reader() -> None:
     """
     global _reader
     _reader = None
+
+
+# --------------------------------------------------------------------------- #
+# Monitor enumeration (used by the region picker and its default-centered fallback)
+# --------------------------------------------------------------------------- #
+
+
+def enumerate_monitors() -> list[dict[str, int]]:
+    """Return the physical monitors as ``[{left, top, width, height}, ...]``.
+
+    Coordinates are in the same virtual-desktop space as ``get_cursor_pos()``.
+    The list excludes ``mss.monitors[0]`` (the union) — only real screens are
+    returned. Empty list means mss reported no physical monitors, which should
+    not happen on any supported platform.
+    """
+    ensure_dpi_awareness()
+    import mss  # imported lazily; --help / --version must not load it
+
+    factory = getattr(mss, "MSS", None) or mss.mss  # mss 11 drops the lowercase form
+    with factory() as sct:
+        return [
+            {
+                "left": int(m["left"]),
+                "top": int(m["top"]),
+                "width": int(m["width"]),
+                "height": int(m["height"]),
+            }
+            for m in sct.monitors[1:]
+        ]
+
+
+def find_monitor_containing(x: int, y: int) -> dict[str, int] | None:
+    """Return the monitor whose bounds contain ``(x, y)``, or ``None`` if none does."""
+    for mon in enumerate_monitors():
+        if (
+            mon["left"] <= x < mon["left"] + mon["width"]
+            and mon["top"] <= y < mon["top"] + mon["height"]
+        ):
+            return mon
+    return None

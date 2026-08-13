@@ -14,8 +14,7 @@ PROG = "screenrecon"
 EPILOG = """\
 examples:
   screenrecon                     watch the configured region
-  screenrecon --configure         interactive setup
-  screenrecon --show-cursor       print live cursor coordinates
+  screenrecon --configure         interactive setup with a drag-to-select picker
   screenrecon --mode log          watch using the 'log' prompt preset
   screenrecon ask "what is this"  capture once and ask a single question
   screenrecon ask                 capture once and start an interactive Q&A
@@ -35,12 +34,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"{PROG} {__version__}")
     parser.add_argument(
         "--configure", action="store_true", help="run the interactive setup wizard"
-    )
-    parser.add_argument(
-        "--show-cursor",
-        action="store_true",
-        dest="show_cursor",
-        help="print live cursor coordinates to help pick a region",
     )
     parser.add_argument(
         "--mode",
@@ -94,14 +87,27 @@ def _warn_about_redirected_endpoint() -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     _configure_stdio()
+    # Friendly hint for users still running the removed --show-cursor flag from an
+    # older version's muscle memory. argparse would print "unrecognized arguments",
+    # which is technically correct but tells the user nothing about what replaced it.
+    if argv is None:
+        raw = sys.argv[1:]
+    else:
+        raw = list(argv)
+    if "--show-cursor" in raw:
+        print(
+            "screenrecon: --show-cursor was removed. "
+            "Run 'screenrecon --configure' — it now opens a drag-to-select picker.",
+            file=sys.stderr,
+        )
+        return 2
+
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.configure and args.show_cursor:
-        parser.error("--configure and --show-cursor cannot be combined")
-    if args.command == "ask" and (args.configure or args.show_cursor):
-        parser.error("the 'ask' subcommand cannot be combined with --configure/--show-cursor")
-    if args.mode and (args.configure or args.show_cursor):
+    if args.command == "ask" and args.configure:
+        parser.error("the 'ask' subcommand cannot be combined with --configure")
+    if args.mode and args.configure:
         parser.error("--mode only applies when watching or when using 'ask'")
 
     # Imported lazily so that --help and --version never load mss/anthropic.
@@ -117,14 +123,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.configure:
             return config.run_wizard(args.config_path)
-
-        if args.show_cursor:
-            # --show-cursor is a pure helper: run it even when nothing is configured.
-            try:
-                cfg = config.load(args.config_path)
-            except config.ConfigError:
-                cfg = None
-            return watcher.run_show_cursor(cfg)
 
         cfg = config.load(args.config_path)
         config.require_credentials(cfg)

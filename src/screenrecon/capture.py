@@ -21,7 +21,7 @@ MACOS_PERMISSION_HINT = (
 
 FLAT_CAPTURE_HINT = (
     "The capture is a single flat colour. If that is not what the region contains,\n"
-    "check the region coordinates with 'screenrecon --show-cursor'."
+    "re-run 'screenrecon --configure' and pick the region again."
 )
 
 MAX_IMAGE_EDGE = 2576

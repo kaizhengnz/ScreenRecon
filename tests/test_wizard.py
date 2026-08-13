@@ -6,7 +6,16 @@ import json
 
 import pytest
 
-from screenrecon import config, notify, vision
+from screenrecon import config, notify, picker, vision
+
+
+def _picker_factory(region):
+    """Convenience: build a picker_factory callable returning a scripted picker."""
+
+    def factory():
+        return picker.ScriptedPicker(region)
+
+    return factory
 
 
 @pytest.fixture
@@ -103,10 +112,7 @@ def test_wizard_writes_every_answer(tmp_path, answers, offline, capsys):
     path = tmp_path / "config.json"
     scripted.extend(
         [
-            "10",  # left
-            "20",  # top
-            "300",  # width
-            "200",  # height
+            "Y",  # update the region? Yes → picker runs
             "2.5",  # dwell seconds
             "claude-haiku-4-5",  # model
             "read the screen",  # prompt
@@ -116,11 +122,12 @@ def test_wizard_writes_every_answer(tmp_path, answers, offline, capsys):
             str(tmp_path / "shots"),  # save dir
         ]
     )
+    picked = {"left": 10, "top": 20, "width": 300, "height": 200}
 
-    assert config.run_wizard(path) == 0
+    assert config.run_wizard(path, picker_factory=_picker_factory(picked)) == 0
 
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved["region"] == {"left": 10, "top": 20, "width": 300, "height": 200}
+    assert saved["region"] == picked
     assert saved["dwell_seconds"] == 2.5
     assert saved["model"] == "claude-haiku-4-5"
     assert saved["anthropic_api_key"] == "sk-ant-wizard-key"
@@ -132,9 +139,82 @@ def test_wizard_writes_every_answer(tmp_path, answers, offline, capsys):
     assert "123456:wizard-token" not in output
 
 
+def test_wizard_keeps_current_region_when_user_declines_the_picker(
+    tmp_path, answers, offline
+):
+    """Answering 'n' at the "Update this region?" prompt must not open the picker."""
+    scripted, _ = answers
+    path = tmp_path / "config.json"
+    path.write_text(
+        json.dumps(
+            {
+                "region": {"left": 50, "top": 60, "width": 400, "height": 300},
+                "anthropic_api_key": "old-key",
+                "telegram_bot_token": "old-token",
+                "telegram_chat_id": "old-chat",
+                "save_dir": str(tmp_path),
+                "prompt": "p",
+                "prompts": {},
+                "dwell_seconds": 3,
+                "model": "claude-opus-5",
+            }
+        ),
+        encoding="utf-8",
+    )
+    scripted.extend(
+        [
+            "n",  # do NOT update the region
+            "3",  # dwell
+            "claude-opus-5",
+            "p",
+            "k",
+            "t",
+            "c",
+            str(tmp_path),
+        ]
+    )
+
+    # The picker factory should never even be called; hand a sentinel that would fail if it were.
+    def exploding_factory():
+        raise AssertionError("picker was invoked despite user answering 'n'")
+
+    assert config.run_wizard(path, picker_factory=exploding_factory) == 0
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["region"] == {"left": 50, "top": 60, "width": 400, "height": 300}
+
+
+def test_wizard_falls_back_to_default_region_on_picker_cancel(
+    tmp_path, answers, offline, monkeypatch
+):
+    """Picker returned None -> wizard uses default_region_at (centered on cursor's monitor)."""
+    scripted, _ = answers
+    path = tmp_path / "config.json"
+    scripted.extend(
+        ["Y", "3", "claude-opus-5", "p", "k", "t", "c", str(tmp_path)]
+    )
+
+    # Cursor at (500, 500) on the only known monitor.
+    monkeypatch.setattr("screenrecon.platform.ensure_reader", lambda: None)
+    monkeypatch.setattr("screenrecon.platform.get_cursor_pos", lambda: (500, 500))
+    monitors = [{"left": 0, "top": 0, "width": 1920, "height": 1080}]
+    monkeypatch.setattr("screenrecon.platform.enumerate_monitors", lambda: monitors)
+    monkeypatch.setattr(
+        "screenrecon.platform.find_monitor_containing", lambda x, y: monitors[0]
+    )
+
+    assert config.run_wizard(path, picker_factory=_picker_factory(None)) == 0
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["region"] == {
+        "left": (1920 - picker.DEFAULT_WIDTH) // 2,
+        "top": (1080 - picker.DEFAULT_HEIGHT) // 2,
+        "width": picker.DEFAULT_WIDTH,
+        "height": picker.DEFAULT_HEIGHT,
+    }
+
+
 def test_wizard_aborts_cleanly_on_closed_stdin(tmp_path, answers, offline, capsys):
     path = tmp_path / "config.json"
-    assert config.run_wizard(path) == 1
+    assert config.run_wizard(path, picker_factory=_picker_factory(None)) == 1
     assert not path.exists()
     assert "stdin is closed" in capsys.readouterr().err
 
@@ -145,10 +225,11 @@ def test_wizard_reports_failed_verification_but_still_saves(tmp_path, answers, m
     monkeypatch.setattr(notify, "verify_credentials", lambda token, chat: (True, "ok"))
     path = tmp_path / "config.json"
     scripted.extend(
-        ["10", "20", "300", "200", "3", "claude-opus-5", "p", "k", "t", "c", str(tmp_path)]
+        ["Y", "3", "claude-opus-5", "p", "k", "t", "c", str(tmp_path)]
     )
+    picked = {"left": 10, "top": 20, "width": 300, "height": 200}
 
-    assert config.run_wizard(path) == 0
+    assert config.run_wizard(path, picker_factory=_picker_factory(picked)) == 0
     assert path.exists()
     output = capsys.readouterr().out
     assert "key is invalid" in output

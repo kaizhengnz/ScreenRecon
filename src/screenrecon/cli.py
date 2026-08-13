@@ -90,11 +90,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Friendly hint for users still running the removed --show-cursor flag from an
     # older version's muscle memory. argparse would print "unrecognized arguments",
     # which is technically correct but tells the user nothing about what replaced it.
-    if argv is None:
-        raw = sys.argv[1:]
-    else:
-        raw = list(argv)
-    if "--show-cursor" in raw:
+    # --help and --version take precedence so the standard "always works" contract holds.
+    raw = list(sys.argv[1:] if argv is None else argv)
+    if "--show-cursor" in raw and not (
+        "--help" in raw or "-h" in raw or "--version" in raw
+    ):
         print(
             "screenrecon: --show-cursor was removed. "
             "Run 'screenrecon --configure' — it now opens a drag-to-select picker.",

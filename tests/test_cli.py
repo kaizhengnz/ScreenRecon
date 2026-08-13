@@ -87,6 +87,16 @@ def test_show_cursor_flag_gets_a_friendly_error(capsys):
     assert "--configure" in err
 
 
+@pytest.mark.parametrize("with_flag", ["--help", "-h", "--version"])
+def test_show_cursor_does_not_hijack_help_or_version(with_flag, capsys):
+    """`--show-cursor --help` must still show help — help/version always work."""
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["--show-cursor", with_flag])
+    assert excinfo.value.code == 0
+    err = capsys.readouterr().err
+    assert "--show-cursor was removed" not in err
+
+
 # --------------------------------------------------------------------------- #
 # Rejected combinations
 # --------------------------------------------------------------------------- #

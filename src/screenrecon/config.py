@@ -402,9 +402,10 @@ def _report_picked_region(region: dict[str, Any]) -> None:
     if monitors:
         cx = region["left"] + region["width"] // 2
         cy = region["top"] + region["height"] // 2
-        mon = cursor_platform.find_monitor_containing(cx, cy, monitors)
-        if mon is not None:
-            line += f" (on monitor {monitors.index(mon) + 1} of {len(monitors)})"
+        found = cursor_platform.find_monitor_index_containing(cx, cy, monitors)
+        if found is not None:
+            index, _ = found
+            line += f" (on monitor {index} of {len(monitors)})"
     ui.info(line)
 
 
@@ -448,13 +449,17 @@ def _run_wizard(
     raw = read_raw(resolved)
     cfg = merge_defaults(raw)
 
-    # First-time users have no saved region yet, and the merge fills in the
-    # hardcoded 100/100/600/400 DEFAULTS. Replace that with a live centered
-    # region so the "Current" line reflects something sensible (and, if they
-    # answer "n" to the picker, that centered region is what gets saved).
-    # If the cursor cannot be read at all, keep the merged DEFAULTS so the
-    # wizard still starts.
-    if "region" not in raw:
+    # First-time (and partial-config) users have no complete saved region, and
+    # the merge fills in the hardcoded 100/100/600/400 DEFAULTS for the missing
+    # keys. Replace that with a live centered region so the "Current" line
+    # reflects something sensible (and, if they answer "n" to the picker, that
+    # centered region is what gets saved). If the cursor cannot be read at all,
+    # keep the merged DEFAULTS so the wizard still starts.
+    saved_region = raw.get("region")
+    has_complete_region = isinstance(saved_region, dict) and all(
+        k in saved_region for k in ("left", "top", "width", "height")
+    )
+    if not has_complete_region:
         centered = _centered_default_or_none()
         if centered is not None:
             cfg["region"] = centered

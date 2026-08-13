@@ -318,19 +318,22 @@ def _ask_float(label: str, current: Any, *, minimum: float | None = None) -> flo
     raise WizardAborted(f"{label}: too many invalid answers, giving up.")
 
 
-def _smart_initial_region(cursor_platform: Any, picker_module: Any) -> dict[str, int]:
-    """Return a ``DEFAULT_PICKED_WIDTH x DEFAULT_PICKED_HEIGHT`` region centered
-    on the monitor holding the cursor, so a first-time user's "Current" line
-    shows something sensible instead of the hardcoded 100/100/600/400 defaults.
+def _centered_default_or_none() -> dict[str, int] | None:
+    """A ``picker.DEFAULT_WIDTH x picker.DEFAULT_HEIGHT`` region centred on the
+    monitor that currently holds the cursor, or ``None`` when the cursor cannot
+    be read (locked screen, missing X display, missing dependency).
 
-    Falls back to the hardcoded DEFAULTS when the cursor cannot be read (e.g.
-    a locked screen or a missing X display), since the wizard must still start.
+    Callers pick the fallback that fits their context — "Current" for a
+    first-time wizard start, "keep the existing region" for an Esc cancel.
     """
+    from . import picker as picker_module
+    from . import platform as cursor_platform
+
     try:
         cursor_platform.ensure_reader()
         x, y = cursor_platform.get_cursor_pos()
     except (cursor_platform.CursorError, cursor_platform.CursorUnavailable):
-        return dict(DEFAULTS["region"])
+        return None
     return picker_module.default_region_at(x, y)
 
 
@@ -344,13 +347,11 @@ def _pick_region_step(
     - Prompt "Update this region? [Y/n]". Answer 'n' keeps the current value.
     - Otherwise open the picker. A successful drag becomes the new region.
     - If the picker returns nothing (Esc, close, or zero-area click), fall back
-      to a ``DEFAULT_PICKED_WIDTH × DEFAULT_PICKED_HEIGHT`` region centered on
-      the monitor that currently holds the cursor.
+      to a centred default; if the cursor is unreadable, keep the current one.
     - If the picker cannot open at all (no display, missing tkinter), warn and
       keep the current region.
     """
     from . import picker as picker_module
-    from . import platform as cursor_platform
 
     ui.info(
         f"   Current: left={current.get('left')} top={current.get('top')} "
@@ -374,19 +375,14 @@ def _pick_region_step(
         return current
 
     if picked is not None:
-        _report_picked_region(picked, cursor_platform)
+        _report_picked_region(picked)
         return picked
 
-    # No drag — apply the default centered on whichever monitor the cursor is on.
-    try:
-        cursor_platform.ensure_reader()
-        x, y = cursor_platform.get_cursor_pos()
-    except (cursor_platform.CursorError, cursor_platform.CursorUnavailable) as exc:
-        ui.warn(f"   Could not read cursor position for the default region: {exc}")
+    region = _centered_default_or_none()
+    if region is None:
+        ui.warn("   Could not read cursor position for the default region.")
         ui.info("   Keeping the current region.")
         return current
-
-    region = picker_module.default_region_at(x, y)
     ui.info(
         f"   Using default: left={region['left']} top={region['top']} "
         f"width={region['width']} height={region['height']}"
@@ -394,23 +390,21 @@ def _pick_region_step(
     return region
 
 
-def _report_picked_region(region: dict[str, Any], cursor_platform: Any) -> None:
+def _report_picked_region(region: dict[str, Any]) -> None:
     """Print the picked region and, when known, which monitor it landed on."""
-    monitors = cursor_platform.enumerate_monitors()
+    from . import platform as cursor_platform
+
     line = (
         f"   Picked: left={region['left']} top={region['top']} "
         f"width={region['width']} height={region['height']}"
     )
+    monitors = cursor_platform.enumerate_monitors()
     if monitors:
         cx = region["left"] + region["width"] // 2
         cy = region["top"] + region["height"] // 2
-        for index, mon in enumerate(monitors, start=1):
-            if (
-                mon["left"] <= cx < mon["left"] + mon["width"]
-                and mon["top"] <= cy < mon["top"] + mon["height"]
-            ):
-                line += f" (on monitor {index} of {len(monitors)})"
-                break
+        mon = cursor_platform.find_monitor_containing(cx, cy, monitors)
+        if mon is not None:
+            line += f" (on monitor {monitors.index(mon) + 1} of {len(monitors)})"
     ui.info(line)
 
 
@@ -449,8 +443,6 @@ def _run_wizard(
     picker_factory: PickerFactory | None = None,
 ) -> int:
     from . import notify, vision  # imported lazily so --help never loads the SDK
-    from . import picker as picker_module
-    from . import platform as cursor_platform
 
     resolved = config_path(path)
     raw = read_raw(resolved)
@@ -458,10 +450,14 @@ def _run_wizard(
 
     # First-time users have no saved region yet, and the merge fills in the
     # hardcoded 100/100/600/400 DEFAULTS. Replace that with a live centered
-    # region so the "Current" line reflects a sensible default (and, if they
+    # region so the "Current" line reflects something sensible (and, if they
     # answer "n" to the picker, that centered region is what gets saved).
+    # If the cursor cannot be read at all, keep the merged DEFAULTS so the
+    # wizard still starts.
     if "region" not in raw:
-        cfg["region"] = _smart_initial_region(cursor_platform, picker_module)
+        centered = _centered_default_or_none()
+        if centered is not None:
+            cfg["region"] = centered
 
     ui.rule("ScreenRecon setup")
     ui.info(f"Config file: {resolved}")

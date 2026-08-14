@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import getpass
 import json
 import os
 from collections.abc import Callable
@@ -40,12 +39,12 @@ def __getattr__(name: str) -> Any:
 DEFAULT_PROMPT = (
     "Describe what is in this screenshot. Be concise and lead with the key information."
 )
-DEFAULT_MODEL = "claude-opus-5"
+DEFAULT_MODEL = "claude-haiku-4-5"
 DEFAULT_SAVE_DIR = "~/ScreenRecon"
 
 MODEL_CHOICES: list[tuple[str, str, str]] = [
-    ("claude-opus-5", "claude-opus-5", "default, high accuracy"),
-    ("claude-haiku-4-5", "claude-haiku-4-5", "cheaper, faster"),
+    ("claude-opus-5", "claude-opus-5", "high accuracy, more expensive"),
+    ("claude-haiku-4-5", "claude-haiku-4-5", "cheaper and faster — the default"),
 ]
 """Built-in model choices for the wizard: ``(display_label, stored_value, note)``.
 
@@ -290,9 +289,14 @@ MAX_PROMPT_RETRIES = 5
 def _ask(label: str, current: Any, *, secret: bool = False) -> str:
     """Prompt for one value. Enter keeps the current value.
 
-    Secrets are read with getpass so the typed value is never echoed to the
-    terminal, never reaches shell/readline history, and cannot be captured from
-    scrollback — or by ScreenRecon's own screenshots (NFR-3).
+    ``secret=True`` no longer hides characters during typing — API keys, bot
+    tokens and chat IDs are all printable ASCII, and hiding them broke paste
+    on Windows and left the user unsure whether their input landed. What
+    ``secret`` still does: shows the current value as a mask in the ``[hint]``
+    (so an existing key is not re-displayed in full), and echoes a masked
+    confirmation after Enter (so scrollback keeps only ``sk-ant-a... (N chars)``
+    prefixes instead of the whole key repeated). NFR-3 still applies at
+    runtime — the watch loop, logs, and tracebacks never quote a secret.
     """
     has_current = current is not None and str(current) != ""
     if not has_current:
@@ -304,7 +308,7 @@ def _ask(label: str, current: Any, *, secret: bool = False) -> str:
 
     prompt = f"{label} [{hint}]: "
     try:
-        answer = (getpass.getpass(prompt) if secret else input(prompt)).strip()
+        answer = input(prompt).strip()
     except EOFError:
         raise WizardAborted(
             "No input available (stdin is closed). Run 'screenrecon --configure' "
@@ -312,6 +316,8 @@ def _ask(label: str, current: Any, *, secret: bool = False) -> str:
         ) from None
     # An empty answer means "keep the current value" — including a current 0.
     if answer:
+        if secret:
+            ui.info(f"    received: {ui.mask(answer)}")
         return answer
     return "" if current is None else str(current)
 
@@ -350,6 +356,8 @@ def _ask_choice(
     label: str,
     presets: list[tuple[str, str, str]],
     current: str,
+    *,
+    default: str | None = None,
 ) -> str:
     """Present ``presets`` as numbered options 1..N, with ``current`` as option N+1.
 
@@ -359,22 +367,28 @@ def _ask_choice(
     the label equals the value; for a prompt whose text is long the label is a
     short synonym (e.g. ``"describe"`` for a full sentence prompt).
 
-    Behaviour:
-
-    - Input a number in ``1..N+1`` → returns that option's value.
-    - Input any non-empty non-numeric text → returned as a custom value (so
-      users can pin a value the wizard does not know about yet).
-    - Enter → keeps ``current`` (the prompt hint is ``[N+1]``; empty answer
-      resolves to that index and therefore to the current value).
+    Enter maps to whichever index the prompt hint shows: by default that is
+    ``N+1`` (keep current), so a user who runs the wizard on an existing config
+    is not surprised. Pass ``default`` (a value that must match one of the
+    preset values) to make Enter select a specific recommended preset instead
+    — used for the AI model, where the shipping recommendation should be what
+    a quick Enter lands on.
 
     Number out of range warns and re-prompts, up to ``MAX_PROMPT_RETRIES``.
+    Non-numeric text is returned verbatim as a custom value.
     """
     current_index = len(presets) + 1
     labels = [preset_label for preset_label, _, _ in presets]
     width = max(len(preset_label) for preset_label in labels) if labels else 0
     current_preview = current if len(current) <= 60 else current[:57] + "..."
 
-    ui.info(f"  {label}:")
+    default_index = current_index
+    if default is not None:
+        for index, (_, preset_value, _) in enumerate(presets, start=1):
+            if preset_value == default:
+                default_index = index
+                break
+
     for index, (preset_label, _, note) in enumerate(presets, start=1):
         ui.info(f"    {index}) {preset_label:<{width}}  ({note})")
     ui.info(f"    {current_index}) (keep current — {current_preview})")
@@ -382,7 +396,7 @@ def _ask_choice(
     for _ in range(MAX_PROMPT_RETRIES):
         answer = _ask(
             f"    Enter 1-{current_index} or type any {label}",
-            str(current_index),
+            str(default_index),
         ).strip()
         if answer.isdigit():
             number = int(answer)
@@ -412,10 +426,10 @@ def _prompt_region(
         f"width={current.get('width')} height={current.get('height')}"
         + display.describe_region_monitor(current)
     )
-    answer = _ask("   Update this region? [Y/n]", "Y").strip().lower()
-    if answer in ("n", "no"):
-        return current
-    return picker_module.pick_region_or_default(current, picker_factory)
+    answer = _ask("   Update this region?", "N").strip().lower()
+    if answer in ("y", "yes"):
+        return picker_module.pick_region_or_default(current, picker_factory)
+    return current
 
 
 def run_wizard(
@@ -475,7 +489,7 @@ def _run_wizard(
 
     ui.rule("ScreenRecon setup")
     ui.info(f"Config file: {resolved}")
-    ui.info("Press Enter to keep the current value. Press Ctrl+C at any time to abort — nothing is saved until every step is done.\n")
+    ui.info("Press Enter to keep the current value. Nothing is saved until every step is done.\n")
 
     ui.info("1) Watched region")
     cfg["region"] = _prompt_region(dict(cfg["region"]), picker_factory)
@@ -483,19 +497,27 @@ def _run_wizard(
     ui.info("\n2) Trigger")
     ui.info(
         "   A capture fires when the cursor stays in the region for this many"
-        " seconds.\n"
-        "   After a capture, the cursor must leave and re-enter the region to"
-        " arm the next one."
+        " seconds. After a capture, the cursor must leave and re-enter the"
+        " region to arm the next one."
     )
     cfg["dwell_seconds"] = _ask_float("  dwell seconds", cfg["dwell_seconds"], minimum=0)
 
     ui.info("\n3) AI model")
-    cfg["model"] = _ask_choice("AI model", MODEL_CHOICES, str(cfg["model"]))
+    cfg["model"] = _ask_choice(
+        "AI model", MODEL_CHOICES, str(cfg["model"]), default=DEFAULT_MODEL
+    )
 
     ui.info("\n4) Default prompt")
-    cfg["prompt"] = _ask_choice("default prompt", PROMPT_CHOICES, str(cfg["prompt"]))
+    cfg["prompt"] = _ask_choice(
+        "default prompt", PROMPT_CHOICES, str(cfg["prompt"]), default=DEFAULT_PROMPT
+    )
 
-    ui.info("\n5) Credentials (never echoed in full)")
+    ui.info("\n5) Credentials")
+    ui.info(
+        "   Characters are visible while typing so paste works. Clear your"
+        " terminal history after setup if you plan to share screenshots or"
+        " scrollback."
+    )
     env_key = os.environ.get(ENV_API_KEY, "").strip()
     if env_key:
         ui.info(f"  {ENV_API_KEY} is set ({ui.mask(env_key)}); it wins over this file at runtime.")

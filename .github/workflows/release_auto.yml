@@ -1,4 +1,4 @@
-name: Publish to PyPI
+name: Release
 
 on:
   push:
@@ -13,7 +13,7 @@ jobs:
       version: ${{ steps.check.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-      - name: Match "chore: release vX.Y.Z" on the head commit
+      - name: 'Match "chore: release vX.Y.Z" on the head commit'
         id: check
         run: |
           MSG=$(git log -1 --format=%s)

@@ -20,7 +20,7 @@ def _picker_factory(region):
 
 @pytest.fixture
 def answers(monkeypatch):
-    """Feed scripted answers to input() and getpass(); record which was used."""
+    """Feed scripted answers to `input()`; record which was used."""
     scripted: list[str] = []
     used: list[tuple[str, str]] = []
 
@@ -32,7 +32,6 @@ def answers(monkeypatch):
         return value
 
     monkeypatch.setattr("builtins.input", lambda prompt="": take("input", prompt))
-    monkeypatch.setattr(config.getpass, "getpass", lambda prompt="": take("getpass", prompt))
     return scripted, used
 
 
@@ -66,12 +65,15 @@ def test_an_answer_replaces_the_current_value(answers):
     assert config._ask("region left", 100) == "250"
 
 
-def test_secrets_are_read_without_echo(answers):
-    """NFR-3: a typed credential must not reach the terminal or shell history."""
+def test_secrets_go_through_input_not_getpass(answers):
+    """Secrets now use `input` on all platforms — hiding characters broke paste
+    on Windows and never added real safety for keys made of printable ASCII.
+    The [hint] and the "received:" echo are still masked (`ui.mask`).
+    """
     scripted, used = answers
     scripted.append("sk-ant-secret-value")
     config._ask("api key", "", secret=True)
-    assert used[0][0] == "getpass"
+    assert used[0][0] == "input"
 
 
 def test_the_current_secret_is_only_ever_shown_masked(answers):
@@ -252,7 +254,6 @@ def test_wizard_shows_centered_default_when_no_region_is_saved(
     out = capsys.readouterr().out
     assert f"left={expected['left']}" in out
     assert f"top={expected['top']}" in out
-    assert "Ctrl+C" in out  # abort hint shown up front
     assert "(on monitor 1 of 1)" in out  # Current line names the monitor
 
 

@@ -30,10 +30,10 @@
 - PR body contains `Closes #<n>` so merging auto-closes the issue.
 - On a feature branch, add new commits for iterative changes — do not `git commit --amend` and force-push. The PR's Commits tab should show the progression of decisions (add rule, then implement, then adjust, etc.). Squash merge at the end still collapses everything into a single commit on `main`.
 - Merge method: **squash merge** — keeps `main` linear, one commit per issue.
-- The single exception: release-plumbing PRs opened by `github-actions[bot]`. They are not tied to a tracking issue, use a `release/vX.Y.Z` branch (not the `SR-<issue#>-<slug>` pattern), and keep the `chore: release vX.Y.Z` commit and PR title (colon retained so `release.yml`'s detection regex stays anchored on it). See **Versioning & release** below for the flow.
+- The single exception: release-plumbing PRs opened by `github-actions[bot]`. They are not tied to a tracking issue, use a `release/vX.Y.Z` branch (not the `SR-<issue#>-<slug>` pattern), and keep the `chore: release vX.Y.Z` commit and PR title (colon retained so `release_auto.yml`'s detection regex stays anchored on it). See **Versioning & release** below for the flow.
 
 ## Versioning & release
 - Version source: `__version__` in `src/screenrecon/__init__.py`. Hatchling reads it dynamically. Never edit this directly to bump — always route through the release workflow.
-- Releases: trigger **Open release PR** (`release_pr.yml`) via GitHub Actions → `Run workflow` (`workflow_dispatch`). It bumps `__version__`, opens a release PR from `release/vX.Y.Z`, and enables auto-merge. Once the PR merges, **Release** (`release.yml`) fires on the merge commit and runs test → build → tag → publish.
+- Releases: trigger **Open release PR** (`release_pr.yml`) via GitHub Actions → `Run workflow` (`workflow_dispatch`). It bumps `__version__`, opens a release PR from `release/vX.Y.Z`, and enables auto-merge. Once the PR merges, **Release** (`release_auto.yml`) fires on the merge commit and runs test → build → tag → publish.
   - `bump` input: `patch` (default) | `minor` | `major`
   - `patch` bumps are routine. `minor` / `major` require the user to consciously pick that option — do not suggest them automatically.

@@ -411,10 +411,10 @@ def _prompt_region(
         f"width={current.get('width')} height={current.get('height')}"
         + display.describe_region_monitor(current)
     )
-    answer = _ask("   Update this region? [Y/n]", "Y").strip().lower()
-    if answer in ("n", "no"):
-        return current
-    return picker_module.pick_region_or_default(current, picker_factory)
+    answer = _ask("   Update this region?", "N").strip().lower()
+    if answer in ("y", "yes"):
+        return picker_module.pick_region_or_default(current, picker_factory)
+    return current
 
 
 def run_wizard(

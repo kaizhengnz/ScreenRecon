@@ -101,7 +101,11 @@ def test_ask_streaming_forwards_deltas_and_joins_the_full_text(monkeypatch):
     assert reply.ok is True
     assert reply.text == "Hello"
     assert seen == ["Hel", "lo"]
-    assert client.models.stream_calls[0]["model"] == "gemini-2.0-flash"
+    call = client.models.stream_calls[0]
+    assert call["model"] == "gemini-2.0-flash"
+    # Output tokens capped for parity with the other providers so a
+    # runaway response cannot burn whatever Gemini's server default is.
+    assert getattr(call.get("config"), "max_output_tokens", None) == vision.MAX_TOKENS
 
 
 def test_ask_streaming_reports_empty_answers(monkeypatch):

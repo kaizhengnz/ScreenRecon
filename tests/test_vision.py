@@ -39,10 +39,12 @@ def _cfg(model: str = "claude-opus-5", key: str = API_KEY) -> dict:
 # --------------------------------------------------------------------------- #
 
 
-def test_authentication_error_points_at_configure():
+def test_authentication_error_points_at_the_key_setter():
     message = anthropic_provider.translate_error(status_error(anthropic.AuthenticationError, 401))
     assert "invalid or revoked" in message
-    assert "--configure" in message
+    # Points at --key, not --configure — a bad key just needs a new key,
+    # not the full wizard.
+    assert "--key" in message
 
 
 def test_rate_limit_error_asks_to_retry():
@@ -238,7 +240,7 @@ def test_ask_streaming_translates_transport_errors_instead_of_raising(monkeypatc
     reply = vision.ask_streaming(_cfg(), [], seen.append)
     assert reply.ok is False
     assert seen == []  # nothing streamed on failure
-    assert "--configure" in reply.text
+    assert "--key" in reply.text
 
 
 def test_ask_streaming_reports_refusals(monkeypatch):

@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 from .. import ui
-from ..vision import Reply, Turn
+from ..vision import MAX_TOKENS, Reply, Turn
 
 
 class GoogleProvider:
@@ -56,12 +56,25 @@ class GoogleProvider:
         except Exception as exc:
             return Reply(False, translate_error(exc, [api_key]))
 
+        # Cap output tokens for parity with the other providers — a
+        # runaway response otherwise burns whatever Gemini's default is.
+        # Wrapped in try/except so an SDK version without `types` (or
+        # without max_output_tokens on the config object) falls back to
+        # a plain stream call rather than crashing.
+        try:
+            from google.genai import types as _types
+
+            request_kwargs: dict[str, Any] = {
+                "model": model,
+                "contents": contents,
+                "config": _types.GenerateContentConfig(max_output_tokens=MAX_TOKENS),
+            }
+        except Exception:
+            request_kwargs = {"model": model, "contents": contents}
+
         chunks: list[str] = []
         try:
-            for chunk in client.models.generate_content_stream(
-                model=model,
-                contents=contents,
-            ):
+            for chunk in client.models.generate_content_stream(**request_kwargs):
                 delta = getattr(chunk, "text", None)
                 if delta:
                     chunks.append(delta)

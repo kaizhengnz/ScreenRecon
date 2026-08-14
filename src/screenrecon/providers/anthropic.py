@@ -192,7 +192,7 @@ def translate_error(exc: Exception, secrets: Iterable[str | None] = ()) -> str:
     if isinstance(exc, anthropic.AuthenticationError):
         return (
             "The API key is invalid or revoked. "
-            "Run 'screenrecon --configure' to set it again."
+            "Run 'screenrecon --key' to set it again."
         )
     if isinstance(exc, anthropic.PermissionDeniedError):
         return "This API key is not allowed to access that resource. Check its permissions."

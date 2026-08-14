@@ -414,10 +414,14 @@ Rules:
 
 **Setup wizard (`--configure`)**: asks for each field, Enter keeps the current
 value, then verifies both sets of credentials online. Verification failure still
-saves, with a warning. Credentials are read with `getpass`, so the typed value
-never reaches the terminal, shell history, or a screenshot ScreenRecon itself
-takes. No input loop can run unbounded: closed stdin aborts cleanly, and
-repeated invalid answers give up.
+saves, with a warning. Credentials echo during typing — earlier releases used
+`getpass` but hiding characters broke paste on Windows and left the user
+unsure whether their input had landed, so the wizard now uses plain `input()`
+and instead masks the *hint* (the current value shown in `[brackets]`) and the
+*echo* of the accepted value (`sk-ant-a... (108 chars)`). NFR-3 still applies
+at runtime: the watch loop, logs, and tracebacks never quote a secret. No
+input loop can run unbounded: closed stdin aborts cleanly, and repeated
+invalid answers give up.
 
 The wizard is six steps: **1) Watched region**, **2) Trigger** (with an
 explanation of dwell semantics and re-arm), **3) AI provider and model**,

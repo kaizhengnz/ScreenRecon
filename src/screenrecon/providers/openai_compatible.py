@@ -25,7 +25,7 @@ class OpenAICompatibleProvider(OpenAIProvider):
         if not base_url:
             raise ValueError(
                 "openai_compatible provider requires 'base_url' in config. "
-                "Set it via 'screenrecon --configure' or edit the config file."
+                "Run 'screenrecon --model' to set it (or edit the config file)."
             )
         return openai.OpenAI(api_key=self._api_key(cfg), base_url=base_url)
 

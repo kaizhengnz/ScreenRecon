@@ -14,7 +14,7 @@
 |---|---|---|---|
 | v1.0 draft | 2026-08-12 | Chinese | Initial draft, written before implementation. Not part of this versioned series. |
 | **0.1.0** | 2026-08-13 | English | First released design document. Translated to English and reconciled with the shipped implementation: licence changed to Apache 2.0, user-facing language changed to English, default model updated, and the design corrected wherever the draft's assumptions turned out to be wrong. Every deviation is listed in [§11](#11-changes-from-the-v10-draft). |
-| **0.1.1** | 2026-08-13 | English | §7 rewritten: release flow moves from a single direct-push workflow to a two-workflow PR-based flow (`release-prepare.yml` opens a release PR with auto-merge; `release-publish.yml` runs test / build / tag / publish on the merge commit). Motivated by branch-protection alignment — `github-actions[bot]` cannot bypass rulesets, so bumps must land via PR like every other change. |
+| **0.1.1** | 2026-08-13 | English | §7 rewritten: release flow moves from a single direct-push workflow to a two-workflow PR-based flow (`release_pr.yml` opens a release PR with auto-merge; `release.yml` runs test / build / tag / publish on the merge commit). Motivated by branch-protection alignment — `github-actions[bot]` cannot bypass rulesets, so bumps must land via PR like every other change. |
 | **0.1.2** | 2026-08-14 | English | Drag-to-select region picker replaces the `--show-cursor` + manual-entry flow (SR-2). New §5.9 documents the tkinter overlay and its test seam. FR-12 restated in terms of the picker; §3.3 no longer lists a graphical picker as out of scope. `--show-cursor` was removed from the CLI; users on the old flag get a one-line hint pointing at `--configure`. Multi-monitor: the overlay spans the virtual desktop, and `platform.enumerate_monitors()` / `find_monitor_containing()` power the Esc-fallback centring on whichever monitor holds the cursor. |
 | **0.1.3** | 2026-08-14 | English | Refactor pass (SR-7): monitor / virtual-desktop / mss code split out of `platform.py` into a new `display.py`, so the cursor path no longer implicitly depends on mss. Picker fallback orchestration hoisted into `picker.pick_region_or_default(current, factory)` — the wizard now delegates one call and no longer knows the picker's internals. Robustness: Tk callback exceptions captured via `report_callback_exception`, `root.destroy` deferred with `after_idle` (macOS focus fix), zero-area click prints a distinguishing notice, and mss shim uses `hasattr`. New §5.10 documents `display.py`. |
 
@@ -546,14 +546,14 @@ Full detail, including the reporting process, is in `SECURITY.md`.
 
 Two workflows, connected by a PR merge on `main`:
 
-1. **`release-prepare.yml`** (trigger: `workflow_dispatch`, `bump` input =
+1. **`release_pr.yml`** (trigger: `workflow_dispatch`, `bump` input =
    `patch` (default) / `minor` / `major`) —
    bumps `__version__` via `scripts/bump_version.py`, syncs the new value into
    this doc's `Document version` header row, commits both files on a fresh
    `release/vX.Y.Z` branch as `github-actions[bot]`, opens a PR to `main`, and
    enables auto-merge (squash) on it. The workflow ends there; the PR does the
    rest.
-2. **`release-publish.yml`** (trigger: `push` to `main`) — inspects the head
+2. **`release.yml`** (trigger: `push` to `main`) — inspects the head
    commit's subject and only proceeds if it matches
    `^chore: release v(\d+\.\d+\.\d+)$` (i.e. the auto-merged release PR). It
    then runs, in order: `test` (pytest), `build` (sdist + wheel + twine check),

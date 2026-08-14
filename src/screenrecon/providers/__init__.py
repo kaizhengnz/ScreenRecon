@@ -15,5 +15,11 @@ from __future__ import annotations
 
 from ..vision import register
 from .anthropic import AnthropicProvider
+from .google import GoogleProvider
+from .openai import OpenAIProvider
+from .openai_compatible import OpenAICompatibleProvider
 
 register(AnthropicProvider())
+register(OpenAIProvider())
+register(GoogleProvider())
+register(OpenAICompatibleProvider())

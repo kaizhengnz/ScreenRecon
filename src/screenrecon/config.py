@@ -358,6 +358,11 @@ def _ask(label: str, current: Any, *, secret: bool = False) -> str:
         ) from None
     # An empty answer means "keep the current value" — including a current 0.
     if answer:
+        if secret:
+            # Echo a masked confirmation so the user knows the paste landed and
+            # roughly what shape it took — NFR-3 stays intact via ui.mask (first
+            # 8 chars only, plus length).
+            ui.info(f"    received: {ui.mask(answer)}")
         return answer
     return "" if current is None else str(current)
 

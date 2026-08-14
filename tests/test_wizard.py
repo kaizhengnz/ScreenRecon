@@ -833,11 +833,15 @@ def test_set_key_reports_a_hand_edited_unknown_provider_as_a_config_error(tmp_pa
     assert "Unknown provider" in err
 
 
-def test_set_key_still_runs_with_openai_compat_missing_base_url(tmp_path, answers):
+def test_set_key_still_runs_with_openai_compat_missing_base_url(tmp_path, answers, capsys):
     """A user whose openai_compatible config is missing base_url must still
-    be able to update the key without first fixing base_url — the up-front
-    check gates only on unknown provider names, not on the full validator."""
-    scripted, _ = answers
+    be able to reach the API-key prompt without first fixing base_url — the
+    up-front check gates only on unknown provider names, not on the full
+    validator. The tail-validate still refuses to save until base_url is
+    populated, but by then the user has learned exactly what remains
+    broken (rather than being told to run --model when they tried to
+    run --key)."""
+    scripted, used = answers
     path = tmp_path / "config.json"
     payload = _existing_config()
     payload["provider"] = "openai_compatible"
@@ -846,22 +850,22 @@ def test_set_key_still_runs_with_openai_compat_missing_base_url(tmp_path, answer
     path.write_text(json.dumps(payload), encoding="utf-8")
     scripted.append("sk-new-key")
 
-    # The setter itself succeeds (writes api_key) and only the final
-    # validate_config in _run_single_field_setter reports the still-missing
-    # base_url — so the user learns what else needs fixing without losing
-    # the key they just typed.
     result = config.run_set_key(path)
-    # Either succeeds (0) if we relax the tail-validate, or fails at the
-    # tail-validate (1) but the setter has already run — verify the key
-    # WAS accepted before the final validate.
+
+    # Setter reached the input prompt (the "sk-new-key" answer was consumed);
+    # if the up-front check had aborted, no input() call would have happened.
+    assert scripted == []
+    assert used, "setter aborted before prompting for the key"
+
+    # Tail-validate refuses the save because base_url is still empty, so
+    # the file on disk is unchanged — the key the user just typed does
+    # not land in a config that would still route captures nowhere.
+    assert result == 1
     on_disk = json.loads(path.read_text(encoding="utf-8"))
-    if result == 0:
-        assert on_disk["api_key"] == "sk-new-key"
-    else:
-        # Tail-validate still guards saves, but the setter body ran to
-        # completion — the point is the setter didn't dead-end on the
-        # up-front check.
-        assert on_disk["api_key"] == "old-key"  # save skipped
+    assert on_disk["api_key"] == "old-key"
+    # The failure message names the field that is still wrong so the user
+    # knows to run --model next.
+    assert "base_url" in capsys.readouterr().err
 
 
 def test_set_model_still_runs_with_openai_compat_missing_base_url(tmp_path, answers):

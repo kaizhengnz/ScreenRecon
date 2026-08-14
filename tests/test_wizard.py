@@ -37,7 +37,7 @@ def answers(monkeypatch):
 
 @pytest.fixture
 def offline(monkeypatch):
-    monkeypatch.setattr(vision, "verify_key", lambda key, model: (True, "ok"))
+    monkeypatch.setattr(vision, "verify_key", lambda cfg: (True, "ok"))
     monkeypatch.setattr(notify, "verify_credentials", lambda token, chat: (True, "ok"))
 
 
@@ -388,7 +388,7 @@ def test_wizard_aborts_cleanly_on_closed_stdin(tmp_path, answers, offline, capsy
 
 def test_wizard_reports_failed_verification_but_still_saves(tmp_path, answers, monkeypatch, capsys):
     scripted, _ = answers
-    monkeypatch.setattr(vision, "verify_key", lambda key, model: (False, "key is invalid"))
+    monkeypatch.setattr(vision, "verify_key", lambda cfg: (False, "key is invalid"))
     monkeypatch.setattr(notify, "verify_credentials", lambda token, chat: (True, "ok"))
     path = tmp_path / "config.json"
     scripted.extend(

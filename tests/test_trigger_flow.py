@@ -32,11 +32,9 @@ def stubs(monkeypatch):
 
     monkeypatch.setattr(capture, "grab", lambda region: Image.new("RGB", (10, 10), (1, 2, 3)))
     monkeypatch.setattr(watcher.capture, "grab", capture.grab)
-    def fake_stream(key, model, messages, on_delta):
-        # Record the prompt (last user text) so tests can assert on it.
-        for block in messages[-1]["content"]:
-            if block.get("type") == "text":
-                calls["vision"].append(block["text"])
+    def fake_stream(cfg, turns, on_delta):
+        # Record the last user turn's text so tests can assert on it.
+        calls["vision"].append(turns[-1].text)
         on_delta("the answer")
         return vision.Reply(True, "the answer")
 

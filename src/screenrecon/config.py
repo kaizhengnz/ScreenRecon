@@ -802,8 +802,8 @@ def _run_wizard(
     cfg["save_dir"] = _ask("  save directory", cfg["save_dir"])
 
     ui.rule("Verifying credentials")
-    ok_claude, msg_claude = vision.verify_key(str(cfg["anthropic_api_key"]), str(cfg["model"]))
-    ui.info(("  OK   " if ok_claude else "  FAIL ") + f"Anthropic: {msg_claude}")
+    ok_claude, msg_claude = vision.verify_key(cfg)
+    ui.info(("  OK   " if ok_claude else "  FAIL ") + f"AI: {msg_claude}")
     ok_tg, msg_tg = notify.verify_credentials(
         str(cfg["telegram_bot_token"]), str(cfg["telegram_chat_id"])
     )

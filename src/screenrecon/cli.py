@@ -72,6 +72,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="prompt for Telegram bot token and chat ID only (all other fields are left alone)",
     )
     parser.add_argument(
+        "--show",
+        action="store_true",
+        help="print the current config (credentials masked) and exit",
+    )
+    parser.add_argument(
         "--mode",
         metavar="NAME",
         help="use the named prompt preset from the 'prompts' config section",
@@ -146,6 +151,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(
             f"--{setter_flags[0].replace('_', '-')} sets one config field; use it on its own"
         )
+    if args.show and (
+        setter_flags
+        or args.configure
+        or args.command == "ask"
+        or args.mode
+        or args.debug
+    ):
+        parser.error("--show only prints the current config; use it on its own")
 
     # Imported lazily so that --help and --version never load mss/anthropic.
     from . import platform as cursor_platform
@@ -174,6 +187,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return config.run_set_save_dir(args.config_path)
         if args.telegram:
             return config.run_set_telegram(args.config_path)
+        if args.show:
+            return config.run_show(args.config_path)
 
         cfg = config.load(args.config_path)
         config.require_credentials(cfg)

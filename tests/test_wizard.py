@@ -661,6 +661,64 @@ def test_single_field_setters_refuse_when_no_config_exists(tmp_path, capsys, set
     assert not path.exists()
 
 
+# --------------------------------------------------------------------------- #
+# run_show — --show flag
+# --------------------------------------------------------------------------- #
+
+
+def test_show_prints_every_field_and_masks_credentials(tmp_path, capsys, monkeypatch):
+    path = tmp_path / "config.json"
+    payload = _existing_config()
+    payload["anthropic_api_key"] = "sk-ant-a-very-long-secret-key-value"
+    payload["telegram_bot_token"] = "123456:ABCDEFGHIJKLMNOP"
+    payload["telegram_chat_id"] = "9876543210"
+    payload["prompts"] = {"log": "find errors", "table": "csv please"}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.delenv(config.ENV_API_KEY, raising=False)
+
+    assert config.run_show(path) == 0
+    out = capsys.readouterr().out
+
+    # Every field is named.
+    for label in (
+        "Region:",
+        "Dwell:",
+        "Model:",
+        "Default prompt:",
+        "Prompt presets:",
+        "Save directory:",
+        "Anthropic key:",
+        "Telegram bot:",
+        "Telegram chat:",
+    ):
+        assert label in out
+    # Presets listed alphabetically.
+    assert "log, table" in out
+    # No secret appears in full — masking should truncate before the 8th char.
+    assert "sk-ant-a-very-long" not in out
+    assert "123456:ABCDEFGHIJKLMNOP" not in out
+    assert "9876543210" not in out
+
+
+def test_show_notes_when_env_key_overrides_the_file(tmp_path, capsys, monkeypatch):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(_existing_config()), encoding="utf-8")
+    monkeypatch.setenv(config.ENV_API_KEY, "sk-ant-env-overriding-value")
+
+    assert config.run_show(path) == 0
+    out = capsys.readouterr().out
+    assert config.ENV_API_KEY in out
+    assert "wins over the file" in out
+
+
+def test_show_refuses_when_no_config_exists(tmp_path, capsys):
+    path = tmp_path / "config.json"  # does not exist
+    assert config.run_show(path) == 1
+    err = capsys.readouterr().err
+    assert "--configure" in err
+    assert not path.exists()
+
+
 def test_set_region_clears_a_stale_monitor_when_enumeration_fails(tmp_path, monkeypatch):
     """A previously-stored monitor annotation must not linger when we cannot
     recompute — leaving stale info would defeat the whole point of storing it."""

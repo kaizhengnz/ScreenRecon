@@ -53,6 +53,7 @@ def calls(monkeypatch):
     monkeypatch.setattr(config, "run_set_dwell", lambda path: record("set_dwell", path))
     monkeypatch.setattr(config, "run_set_save_dir", lambda path: record("set_save_dir", path))
     monkeypatch.setattr(config, "run_set_telegram", lambda path: record("set_telegram", path))
+    monkeypatch.setattr(config, "run_show", lambda path: record("show", path))
     return recorded
 
 
@@ -117,6 +118,12 @@ def test_single_field_setters_route_to_their_config_helpers(
     assert "watch" not in calls
 
 
+def test_show_prints_config_and_skips_the_watch_loop(config_file, calls):
+    assert cli.main(["--config", config_file, "--show"]) == 0
+    assert calls["show"] == config_file
+    assert "watch" not in calls
+
+
 def test_ask_passes_the_joined_question(config_file, calls):
     assert cli.main(["--config", config_file, "ask", "what", "is", "this"]) == 0
     assert calls["ask"] == "what is this"
@@ -155,6 +162,9 @@ def test_ask_with_a_mode_uses_the_preset_as_the_question(config_file, calls):
         ["--save-dir", "--telegram"],
         ["--telegram", "ask", "q"],
         ["--prompt", "--configure"],
+        ["--show", "--configure"],
+        ["--show", "--screen"],
+        ["--show", "ask", "q"],
     ],
 )
 def test_conflicting_flags_exit_two(argv):

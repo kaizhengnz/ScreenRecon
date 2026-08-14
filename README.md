@@ -68,6 +68,7 @@ cursor there will never re-trigger.
 | `screenrecon --dwell` | Set dwell seconds only |
 | `screenrecon --save-dir` | Set the archive directory only |
 | `screenrecon --telegram` | Prompt for Telegram bot token + chat ID (as a pair) |
+| `screenrecon --show` | Print the current config (credentials masked) and exit |
 | `screenrecon --mode NAME` | Watch using the `prompts.NAME` preset instead of the default prompt |
 | `screenrecon ask "question"` | Capture once, answer one question, exit |
 | `screenrecon ask` | Capture once, then keep asking questions about that screenshot |

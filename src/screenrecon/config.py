@@ -654,6 +654,61 @@ def run_set_save_dir(path: str | os.PathLike[str] | None = None) -> int:
     return _run_single_field_setter(path, "ScreenRecon set save directory", setter)
 
 
+def run_show(path: str | os.PathLike[str] | None = None) -> int:
+    """Print the current config, credentials masked, and exit 0.
+
+    Read-only companion to the single-field setters: a user who wants to know
+    "what is set to what right now" no longer has to open the JSON file (and
+    handle unfamiliar escaping) or re-run `--configure` just to see the
+    current values. Credentials pass through :func:`ui.mask` so scrollback
+    stays safe to share.
+
+    Refuses if no config exists yet, matching the setters — nothing useful
+    to show, and the message points at `--configure`.
+    """
+    from . import display
+
+    resolved = config_path(path)
+    raw = read_raw(resolved)
+    if not raw:
+        ui.error(
+            f"No config at {resolved}. Run 'screenrecon --configure' to create one."
+        )
+        return 1
+
+    cfg = merge_defaults(raw)
+    region = cfg["region"]
+    stored_monitor = raw.get("monitor") if isinstance(raw.get("monitor"), dict) else None
+    monitor_annotation = (
+        display.format_monitor_info(stored_monitor)
+        or display.describe_region_monitor(region)
+    )
+    env_key = os.environ.get(ENV_API_KEY, "").strip()
+
+    ui.rule("ScreenRecon config")
+    ui.info(f"Config file: {resolved}")
+    ui.info("")
+    ui.info(
+        f"  Region:          left={region.get('left')} top={region.get('top')} "
+        f"width={region.get('width')} height={region.get('height')}{monitor_annotation}"
+    )
+    ui.info(f"  Dwell:           {cfg['dwell_seconds']} s")
+    ui.info(f"  Model:           {cfg['model']}")
+    ui.info(f"  Default prompt:  {cfg['prompt']}")
+    presets = sorted((cfg.get("prompts") or {}).keys())
+    ui.info(f"  Prompt presets:  {', '.join(presets) if presets else '(none)'}")
+    ui.info(f"  Save directory:  {cfg['save_dir']}")
+    ui.info(f"  Anthropic key:   {ui.mask(str(cfg['anthropic_api_key']))}")
+    if env_key:
+        ui.info(
+            f"                   ({ENV_API_KEY} is set to {ui.mask(env_key)}; "
+            "it wins over the file at runtime.)"
+        )
+    ui.info(f"  Telegram bot:    {ui.mask(str(cfg['telegram_bot_token']))}")
+    ui.info(f"  Telegram chat:   {ui.mask(str(cfg['telegram_chat_id']))}")
+    return 0
+
+
 def run_set_telegram(path: str | os.PathLike[str] | None = None) -> int:
     """Prompt for both Telegram credentials and save them; leave every other field alone.
 

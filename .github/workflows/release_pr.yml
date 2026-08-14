@@ -36,9 +36,13 @@ jobs:
       - name: Commit on release branch and push
         env:
           NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Delete any leftover release branch from a previous half-completed
+          # run so a retry is not blocked by "remote branch already exists".
+          git push origin --delete "release/v${NEW_VERSION}" 2>/dev/null || true
           git checkout -b "release/v${NEW_VERSION}"
           git add src/screenrecon/__init__.py docs/ScreenRecon_Design.md
           git commit -m "chore: release v${NEW_VERSION}"
@@ -52,9 +56,19 @@ jobs:
             --base main \
             --head "release/v${NEW_VERSION}" \
             --title "chore: release v${NEW_VERSION}" \
-            --body "Automated release bump for v${NEW_VERSION}. Auto-merges once branch protection allows; publish to PyPI runs on the merge commit."
-      - name: Enable auto-merge
+            --body "Automated release bump for v${NEW_VERSION}. Merged synchronously by the workflow; publish runs on the merge commit via release_auto.yml."
+      - name: Merge the release PR synchronously
         env:
           GH_TOKEN: ${{ github.token }}
           NEW_VERSION: ${{ steps.bump.outputs.new_version }}
-        run: gh pr merge --auto --squash "release/v${NEW_VERSION}"
+        # `gh pr merge --squash` (no --auto) blocks until the merge completes,
+        # so the next step's `gh workflow run` fires against a `main` that
+        # already contains the release commit.
+        run: gh pr merge --squash --delete-branch "release/v${NEW_VERSION}"
+      - name: Trigger release_auto on the new main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # GitHub suppresses push-triggered workflows when the push comes from
+        # GITHUB_TOKEN, so release_auto would not fire on the merge above.
+        # workflow_dispatch is exempted, so this reliably chains through.
+        run: gh workflow run release_auto.yml --ref main

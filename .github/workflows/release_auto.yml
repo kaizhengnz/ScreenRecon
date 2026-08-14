@@ -3,6 +3,10 @@ name: Release
 on:
   push:
     branches: [main]
+  # Manual escape hatch: run against `main` (or any ref) when the chain from
+  # release_pr.yml did not fire — e.g. when the merge push was suppressed by
+  # GitHub's GITHUB_TOKEN anti-recursion rule.
+  workflow_dispatch:
 
 jobs:
   detect-release:

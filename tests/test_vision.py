@@ -31,7 +31,7 @@ def status_error(cls, status_code: int, message: str = "boom"):
 
 
 def _cfg(model: str = "claude-opus-5", key: str = API_KEY) -> dict:
-    return {"model": model, "anthropic_api_key": key}
+    return {"model": model, "api_key": key}
 
 
 # --------------------------------------------------------------------------- #

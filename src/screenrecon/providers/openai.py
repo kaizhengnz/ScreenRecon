@@ -48,7 +48,7 @@ class OpenAIProvider:
         except ImportError:
             return Reply(
                 False,
-                "Missing dependency 'openai'. Install with: pip install openai",
+                "Missing dependency 'openai'. Install with: pip install 'screenrecon[openai]'",
             )
 
         try:
@@ -89,7 +89,11 @@ class OpenAIProvider:
         try:
             import openai  # noqa: F401 - probe availability before making the SDK call
         except ImportError:
-            return False, "Missing dependency 'openai'; cannot verify."
+            return (
+                False,
+                "Missing dependency 'openai'. "
+                "Install with: pip install 'screenrecon[openai]'",
+            )
         try:
             self._client(cfg).models.retrieve(model)
         except Exception as exc:

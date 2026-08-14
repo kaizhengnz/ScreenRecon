@@ -8,7 +8,9 @@ from typing import Any
 
 from . import capture, display, notify, outline, platform, storage, ui, vision
 
-CREDENTIAL_KEYS = ("anthropic_api_key", "telegram_bot_token", "telegram_chat_id")
+CREDENTIAL_KEYS = ("api_key", "anthropic_api_key", "telegram_bot_token", "telegram_chat_id")
+"""Fields to scrub from third-party error text. ``anthropic_api_key`` is kept
+for the SR-23 migration window: legacy configs still carry it on disk."""
 
 POLL_INTERVAL = 0.1
 """Polling period in seconds. NFR-1 requires <= 200 ms."""

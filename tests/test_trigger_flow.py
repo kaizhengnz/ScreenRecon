@@ -16,7 +16,7 @@ from screenrecon import capture, notify, storage, vision, watcher
 def cfg(tmp_path):
     return {
         "region": {"left": 0, "top": 0, "width": 10, "height": 10},
-        "anthropic_api_key": "sk-ant-fake-key-value",
+        "api_key": "sk-ant-fake-key-value",
         "telegram_bot_token": "123456:fake-bot-token",
         "telegram_chat_id": "987654321",
         "save_dir": str(tmp_path / "archive"),
@@ -235,7 +235,7 @@ def test_watch_loop_survives_a_failing_trigger(cfg, monkeypatch, capsys):
     """NFR-2: one bad trigger must never take the watcher down."""
 
     def explode(cfg, prompt):
-        raise RuntimeError(f"boom {cfg['anthropic_api_key']}")
+        raise RuntimeError(f"boom {cfg['api_key']}")
 
     fired, exit_code = run_loop(cfg, monkeypatch, [(5, 5)] * 80, on_trigger=explode)
     assert exit_code == 0  # ended on Ctrl+C, not on the exception
@@ -243,12 +243,12 @@ def test_watch_loop_survives_a_failing_trigger(cfg, monkeypatch, capsys):
     captured = capsys.readouterr()
     combined = captured.out + captured.err
     assert "Trigger failed" in combined
-    assert cfg["anthropic_api_key"] not in combined
+    assert cfg["api_key"] not in combined
 
 
 def test_credentials_never_reach_the_terminal(cfg, stubs, capsys):
     watcher.handle_trigger(cfg, "read this")
     output = capsys.readouterr()
     combined = output.out + output.err
-    assert cfg["anthropic_api_key"] not in combined
+    assert cfg["api_key"] not in combined
     assert cfg["telegram_bot_token"] not in combined

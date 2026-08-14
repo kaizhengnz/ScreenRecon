@@ -10,7 +10,7 @@ from screenrecon import cli, config, watcher
 
 CONFIG = {
     "region": {"left": 10, "top": 20, "width": 300, "height": 200},
-    "anthropic_api_key": "sk-ant-test-key-value",
+    "api_key": "sk-ant-test-key-value",
     "telegram_bot_token": "123456:test-bot-token",
     "telegram_chat_id": "987654321",
     "save_dir": "~/ScreenRecon",
@@ -22,8 +22,7 @@ CONFIG = {
 
 
 @pytest.fixture
-def config_file(tmp_path, monkeypatch):
-    monkeypatch.delenv(config.ENV_API_KEY, raising=False)
+def config_file(tmp_path):
     path = tmp_path / "config.json"
     path.write_text(json.dumps(CONFIG), encoding="utf-8")
     return str(path)
@@ -190,10 +189,9 @@ def test_unknown_mode_is_an_error_for_ask_too(config_file, calls, capsys):
 # --------------------------------------------------------------------------- #
 
 
-def test_missing_credentials_exit_one(tmp_path, monkeypatch, capsys):
-    monkeypatch.delenv(config.ENV_API_KEY, raising=False)
+def test_missing_credentials_exit_one(tmp_path, capsys):
     path = tmp_path / "config.json"
-    path.write_text(json.dumps({**CONFIG, "anthropic_api_key": ""}), encoding="utf-8")
+    path.write_text(json.dumps({**CONFIG, "api_key": ""}), encoding="utf-8")
     assert cli.main(["--config", str(path)]) == 1
     assert "--configure" in capsys.readouterr().err
 
@@ -210,14 +208,14 @@ def test_unexpected_errors_are_caught_and_scrubbed(config_file, monkeypatch, cap
     """A traceback here would carry the credentials in its frame locals."""
 
     def explode(cfg, prompt, *, debug=False):
-        raise RuntimeError(f"boom with key {cfg['anthropic_api_key']}")
+        raise RuntimeError(f"boom with key {cfg['api_key']}")
 
     monkeypatch.setattr(watcher, "run", explode)
     assert cli.main(["--config", config_file]) == 1
 
     captured = capsys.readouterr()
     combined = captured.out + captured.err
-    assert CONFIG["anthropic_api_key"] not in combined
+    assert CONFIG["api_key"] not in combined
     assert "RuntimeError" in combined
 
 

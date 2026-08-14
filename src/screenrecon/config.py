@@ -42,19 +42,54 @@ DEFAULT_PROMPT = (
 DEFAULT_MODEL = "claude-haiku-4-5"
 DEFAULT_SAVE_DIR = "~/ScreenRecon"
 
-MODEL_CHOICES: list[tuple[str, str, str]] = [
-    ("claude-opus-5", "claude-opus-5", "high accuracy, more expensive"),
-    ("claude-haiku-4-5", "claude-haiku-4-5", "cheaper and faster — the default"),
-]
-"""Built-in model choices for the wizard: ``(display_label, stored_value, note)``.
+MODEL_CHOICES_BY_PROVIDER: dict[str, list[tuple[str, str, str]]] = {
+    "anthropic": [
+        ("claude-opus-5", "claude-opus-5", "high accuracy, more expensive"),
+        ("claude-haiku-4-5", "claude-haiku-4-5", "cheaper and faster — the default"),
+    ],
+    "openai": [
+        ("gpt-5", "gpt-5", "top OpenAI vision"),
+        ("gpt-5-mini", "gpt-5-mini", "cheaper and faster"),
+    ],
+    "google": [
+        ("gemini-2.5-pro", "gemini-2.5-pro", "high accuracy"),
+        ("gemini-2.5-flash", "gemini-2.5-flash", "fast and cheap"),
+    ],
+    "openai_compatible": [
+        # Model names for compat endpoints are provider-specific; presets
+        # below carry a suggested default per endpoint. The wizard tacks
+        # "type any model ID" onto the choice, so custom entries are trivial.
+    ],
+}
+"""Curated per-provider model shortlists for the wizard. Not exhaustive —
+the wizard always accepts a typed custom model ID via ``_ask_choice``.
+Ordering: the recommended default is second (index 2) so a fresh install
+lands on the cheaper/faster option; expensive picks sit at index 1 for
+users who type-ahead their preference."""
 
-For models the label equals the value (the model ID is short and readable), so
-the list looks a bit redundant. The three-tuple shape is the same one
-:data:`PROMPT_CHOICES` uses, where the label and the value differ.
 
-The wizard tacks the current value on as the final numbered option (index
-``len(MODEL_CHOICES) + 1``) so pressing Enter always maps to "keep current".
-"""
+COMPAT_PRESETS: dict[str, tuple[str, str, str]] = {
+    # label -> (base_url, default_model, note)
+    "deepseek": (
+        "https://api.deepseek.com/v1",
+        "deepseek-vl2",
+        "DeepSeek official — vision-capable",
+    ),
+    "kimi": (
+        "https://api.moonshot.cn/v1",
+        "moonshot-v1-8k-vision-preview",
+        "Moonshot / Kimi — vision preview",
+    ),
+    "doubao": (
+        "https://ark.cn-beijing.volces.com/api/v3",
+        "doubao-1-5-vision-pro-32k-241015",
+        "Doubao (ByteDance / Volcano Engine)",
+    ),
+}
+"""Shortcuts for the OpenAI-compatible provider. The wizard asks for a
+preset label or a custom base URL; when a label is picked, the default
+model is pre-filled but still editable. Endpoints verified against each
+provider's compat-mode docs at the time of writing (2026-08)."""
 
 PROMPT_CHOICES: list[tuple[str, str, str]] = [
     (
@@ -70,11 +105,14 @@ PROMPT_CHOICES: list[tuple[str, str, str]] = [
 ]
 """Built-in prompt presets. Same ``(label, value, note)`` shape as :data:`MODEL_CHOICES`."""
 
-ENV_API_KEY = "ANTHROPIC_API_KEY"
-
 DEFAULTS: dict[str, Any] = {
     "region": {"left": 100, "top": 100, "width": 600, "height": 400},
-    "anthropic_api_key": "",
+    # provider: empty means "infer from model prefix"; the dispatcher falls
+    # back to anthropic for unknown prefixes so existing configs keep working.
+    "provider": "",
+    "api_key": "",
+    # base_url: only meaningful when provider == "openai_compatible".
+    "base_url": "",
     "telegram_bot_token": "",
     "telegram_chat_id": "",
     "save_dir": DEFAULT_SAVE_DIR,
@@ -84,13 +122,19 @@ DEFAULTS: dict[str, Any] = {
     "model": DEFAULT_MODEL,
 }
 
-CREDENTIAL_FIELDS = ("anthropic_api_key", "telegram_bot_token", "telegram_chat_id")
+CREDENTIAL_FIELDS = ("api_key", "telegram_bot_token", "telegram_chat_id")
 
 _CREDENTIAL_LABELS = {
-    "anthropic_api_key": "Anthropic API key",
+    "api_key": "AI API key",
     "telegram_bot_token": "Telegram bot token",
     "telegram_chat_id": "Telegram chat ID",
 }
+
+LEGACY_API_KEY_FIELD = "anthropic_api_key"
+"""Pre-SR-23 configs stored the Anthropic key here. ``merge_defaults`` migrates
+into ``api_key`` on read; ``save`` strips the old field on write. Kept as a
+constant rather than a string literal so a search finds every reference at
+once when the migration window ends."""
 
 
 class ConfigError(Exception):
@@ -138,7 +182,14 @@ def read_raw(path: Path) -> dict[str, Any]:
 
 
 def merge_defaults(raw: dict[str, Any]) -> dict[str, Any]:
-    """Merge with defaults; 'region' and 'prompts' are merged one level deep."""
+    """Merge with defaults; ``region`` / ``prompts`` are merged one level deep.
+
+    Also migrates the pre-SR-23 ``anthropic_api_key`` field into ``api_key``
+    when the new field is absent, so a config from 0.1.5 keeps working
+    unchanged until the user runs any setter (which then rewrites without
+    the legacy field). This migration happens in memory only — the file
+    on disk is untouched until the next explicit save.
+    """
     merged: dict[str, Any] = dict(DEFAULTS)
     merged["region"] = dict(DEFAULTS["region"])
     merged["prompts"] = {}
@@ -150,21 +201,24 @@ def merge_defaults(raw: dict[str, Any]) -> dict[str, Any]:
             merged["prompts"] = dict(value)
         else:
             merged[key] = value
+
+    # Legacy migration: fall back to anthropic_api_key when api_key is empty.
+    if not str(merged.get("api_key") or "").strip():
+        legacy = str(raw.get(LEGACY_API_KEY_FIELD) or "").strip()
+        if legacy:
+            merged["api_key"] = legacy
     return merged
 
 
-def apply_env_overrides(cfg: dict[str, Any]) -> dict[str, Any]:
-    """ANTHROPIC_API_KEY takes precedence over the key in the file (FR-15)."""
-    env_key = os.environ.get(ENV_API_KEY, "").strip()
-    if env_key:
-        cfg["anthropic_api_key"] = env_key
-    return cfg
-
-
 def load(path: str | os.PathLike[str] | None = None, *, validate: bool = True) -> dict[str, Any]:
-    """Load config: merge defaults, apply env overrides, then validate."""
+    """Load config: merge defaults, then validate.
+
+    No environment-variable overrides — SR-23 dropped `ANTHROPIC_API_KEY` in
+    favour of a single-source-of-truth config file. Users who relied on the
+    env variable move the key into the file with ``screenrecon --key``.
+    """
     resolved = config_path(path)
-    cfg = apply_env_overrides(merge_defaults(read_raw(resolved)))
+    cfg = merge_defaults(read_raw(resolved))
     cfg["_path"] = str(resolved)
     if validate:
         validate_config(cfg)
@@ -177,10 +231,19 @@ def save(cfg: dict[str, Any], path: str | os.PathLike[str] | None = None) -> Pat
     The file is created 0600 and moved into place atomically, so the credentials
     are never briefly readable at the process umask, a crash cannot leave a torn
     config behind, and a symlink planted at the destination is replaced rather
-    than followed.
+    than followed. Any legacy ``anthropic_api_key`` field is dropped from the
+    payload once ``api_key`` is populated — the migration is one-way and
+    completes at the next save.
     """
     resolved = config_path(path or cfg.get("_path"))
-    payload = {k: v for k, v in cfg.items() if not k.startswith("_")}
+    payload: dict[str, Any] = {}
+    for key, value in cfg.items():
+        if key.startswith("_"):
+            continue
+        # Drop the legacy field once the new one carries the same value.
+        if key == LEGACY_API_KEY_FIELD and str(cfg.get("api_key") or "").strip():
+            continue
+        payload[key] = value
     text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     try:
         storage.make_private_dir(resolved.parent)
@@ -248,6 +311,28 @@ def validate_config(cfg: dict[str, Any]) -> None:
         value = cfg.get(field)
         if value is not None and not isinstance(value, str):
             raise ConfigError(f"Config field '{field}' must be a string")
+
+    provider = cfg.get("provider")
+    if provider is not None and not isinstance(provider, str):
+        raise ConfigError(f"Config field 'provider' must be a string, got {provider!r}")
+    if isinstance(provider, str) and provider.strip():
+        # Lazy import so this module stays test-importable without the SDK.
+        from . import vision as _vision
+
+        if provider not in {p.name for p in _vision.known_providers()}:
+            raise ConfigError(
+                f"Unknown provider {provider!r} in config. "
+                f"Known: {', '.join(sorted(p.name for p in _vision.known_providers()))}."
+            )
+        if provider == "openai_compatible" and not str(cfg.get("base_url") or "").strip():
+            raise ConfigError(
+                "Config field 'base_url' is required when 'provider' is "
+                "'openai_compatible'. Run 'screenrecon --model' to set it."
+            )
+
+    base_url = cfg.get("base_url")
+    if base_url is not None and not isinstance(base_url, str):
+        raise ConfigError(f"Config field 'base_url' must be a string, got {base_url!r}")
 
 
 def require_credentials(cfg: dict[str, Any]) -> None:
@@ -601,28 +686,134 @@ def _run_single_field_setter(
 
 
 def run_set_key(path: str | os.PathLike[str] | None = None) -> int:
-    """Prompt for a new Anthropic API key and save it; leave every other field alone."""
+    """Prompt for a new API key for whichever provider the current config uses.
+
+    ``--key`` is provider-agnostic: it writes to ``api_key``, which the
+    dispatcher hands to whichever provider ``cfg["provider"]`` (or the model
+    prefix) selects. A user who just switched providers via ``--model`` runs
+    ``--key`` next without having to remember which provider they picked.
+    """
+    from . import vision as _vision
+
     def setter(raw: dict[str, Any]) -> None:
-        env_key = os.environ.get(ENV_API_KEY, "").strip()
-        if env_key:
-            ui.info(
-                f"  {ENV_API_KEY} is set ({ui.mask(env_key)}); it wins over this file at runtime."
-            )
-        current = raw.get("anthropic_api_key", DEFAULTS["anthropic_api_key"])
-        raw["anthropic_api_key"] = _ask("  Anthropic API key", current, secret=True)
+        # Pass a fresh merged view so provider inference sees the migrated
+        # api_key; the write below still goes to `raw`.
+        merged = merge_defaults(raw)
+        provider = _vision.get_provider(merged)
+        ui.info(f"  Provider: {provider.display_name}")
+        current = raw.get("api_key") or raw.get(LEGACY_API_KEY_FIELD) or ""
+        raw["api_key"] = _ask("  API key", current, secret=True)
 
     return _run_single_field_setter(path, "ScreenRecon set API key", setter)
 
 
 def run_set_model(path: str | os.PathLike[str] | None = None) -> int:
-    """Pick a new AI model and save it; leave every other field alone."""
+    """Two-step: pick a provider (or keep the current one), then pick a model
+    from that provider's shortlist (or type any custom ID). For the
+    OpenAI-compatible provider, also collect a base URL (preset or custom)
+    and a default model for the chosen endpoint.
+
+    Leaves every other config field alone. The api_key is left intact — the
+    user runs ``--key`` next to update it for the new provider.
+    """
     def setter(raw: dict[str, Any]) -> None:
-        current = str(raw.get("model", DEFAULT_MODEL))
-        raw["model"] = _ask_choice(
-            "AI model", MODEL_CHOICES, current, default=DEFAULT_MODEL
-        )
+        _prompt_provider_and_model(raw)
 
     return _run_single_field_setter(path, "ScreenRecon set model", setter)
+
+
+def _prompt_provider_and_model(target: dict[str, Any]) -> None:
+    """Ask 'which provider' then 'which model'; mutate ``target`` in place.
+
+    Shared between ``--configure`` step 3 and ``--model``. For
+    ``openai_compatible`` also asks for the endpoint preset (or a custom
+    base URL) and pre-fills a suggested model. Never contacts the network —
+    verification happens later (only in ``--configure``, and only if the
+    caller runs ``vision.verify_key(cfg)`` after).
+    """
+    from . import vision as _vision
+
+    provider_options: list[tuple[str, str, str]] = [
+        (p.display_name, p.name, "") for p in _vision.known_providers()
+    ]
+    current_provider = _vision.get_provider(target).name
+    chosen_provider = _ask_choice(
+        "AI provider",
+        provider_options,
+        current_provider,
+        default=current_provider,
+    )
+    target["provider"] = chosen_provider
+
+    if chosen_provider == "openai_compatible":
+        _prompt_compat_endpoint(target)
+
+    model_options = MODEL_CHOICES_BY_PROVIDER.get(chosen_provider, [])
+    current_model = str(target.get("model") or DEFAULT_MODEL)
+    if not model_options:
+        # No curated list for this provider (openai_compatible after a custom
+        # endpoint): fall back to a plain text prompt with the current value
+        # as the default.
+        target["model"] = _ask("  model ID", current_model)
+    else:
+        default_value = model_options[-1][1] if current_model not in {
+            v for _, v, _ in model_options
+        } else current_model
+        target["model"] = _ask_choice(
+            "model",
+            model_options,
+            current_model,
+            default=default_value,
+        )
+
+
+def _prompt_compat_endpoint(target: dict[str, Any]) -> None:
+    """Ask which OpenAI-compatible endpoint to talk to.
+
+    A numbered preset picks a verified base URL + a suggested vision model
+    in one step; typing text is treated as a custom base URL, and the model
+    prompt that follows lets the user set the right ID for that endpoint.
+    """
+    presets = list(COMPAT_PRESETS.items())
+    current_base = str(target.get("base_url") or "")
+    current_label = ""
+    for label, (url, _model, _note) in presets:
+        if url == current_base:
+            current_label = label
+            break
+
+    ui.info("  Endpoint presets:")
+    for idx, (label, (url, _model, note)) in enumerate(presets, start=1):
+        ui.info(f"    {idx}) {label:<10} {url}  ({note})")
+    ui.info(f"    {len(presets) + 1}) (keep current — {current_base or 'unset'})")
+
+    prompt_hint = current_label or str(len(presets) + 1)
+    for _ in range(MAX_PROMPT_RETRIES):
+        answer = _ask(f"    Enter 1-{len(presets) + 1} or type any base URL", prompt_hint)
+        answer = answer.strip()
+        if not answer:
+            continue
+        if answer.isdigit():
+            number = int(answer)
+            if 1 <= number <= len(presets):
+                label, (url, default_model, _note) = presets[number - 1]
+                target["base_url"] = url
+                target["model"] = default_model
+                return
+            if number == len(presets) + 1:
+                # Keep current base URL; model prompt below handles the model.
+                return
+            ui.warn(f"    Choice must be 1-{len(presets) + 1}; try again.")
+            continue
+        # Try preset by label first, otherwise treat as a raw URL.
+        if answer.lower() in COMPAT_PRESETS:
+            url, default_model, _ = COMPAT_PRESETS[answer.lower()]
+            target["base_url"] = url
+            target["model"] = default_model
+            return
+        target["base_url"] = answer
+        return
+    raise WizardAborted("Endpoint URL: too many invalid answers, giving up.")
 
 
 def run_set_prompt(path: str | os.PathLike[str] | None = None) -> int:
@@ -683,7 +874,10 @@ def run_show(path: str | os.PathLike[str] | None = None) -> int:
         display.format_monitor_info(stored_monitor)
         or display.describe_region_monitor(region)
     )
-    env_key = os.environ.get(ENV_API_KEY, "").strip()
+
+    from . import vision as _vision
+
+    provider = _vision.get_provider(cfg)
 
     ui.rule("ScreenRecon config")
     ui.info(f"Config file: {resolved}")
@@ -693,17 +887,15 @@ def run_show(path: str | os.PathLike[str] | None = None) -> int:
         f"width={region.get('width')} height={region.get('height')}{monitor_annotation}"
     )
     ui.info(f"  Dwell:           {cfg['dwell_seconds']} s")
+    ui.info(f"  Provider:        {provider.display_name}")
     ui.info(f"  Model:           {cfg['model']}")
+    if provider.name == "openai_compatible":
+        ui.info(f"  Base URL:        {cfg.get('base_url') or '(unset)'}")
     ui.info(f"  Default prompt:  {cfg['prompt']}")
     presets = sorted((cfg.get("prompts") or {}).keys())
     ui.info(f"  Prompt presets:  {', '.join(presets) if presets else '(none)'}")
     ui.info(f"  Save directory:  {cfg['save_dir']}")
-    ui.info(f"  Anthropic key:   {ui.mask(str(cfg['anthropic_api_key']))}")
-    if env_key:
-        ui.info(
-            f"                   ({ENV_API_KEY} is set to {ui.mask(env_key)}; "
-            "it wins over the file at runtime.)"
-        )
+    ui.info(f"  API key:         {ui.mask(str(cfg.get('api_key') or ''))}")
     ui.info(f"  Telegram bot:    {ui.mask(str(cfg['telegram_bot_token']))}")
     ui.info(f"  Telegram chat:   {ui.mask(str(cfg['telegram_chat_id']))}")
     return 0
@@ -775,10 +967,8 @@ def _run_wizard(
     )
     cfg["dwell_seconds"] = _ask_float("  dwell seconds", cfg["dwell_seconds"], minimum=0)
 
-    ui.info("\n3) AI model")
-    cfg["model"] = _ask_choice(
-        "AI model", MODEL_CHOICES, str(cfg["model"]), default=DEFAULT_MODEL
-    )
+    ui.info("\n3) AI provider and model")
+    _prompt_provider_and_model(cfg)
 
     ui.info("\n4) Default prompt")
     cfg["prompt"] = _ask_choice(
@@ -791,10 +981,8 @@ def _run_wizard(
         " terminal history after setup if you plan to share screenshots or"
         " scrollback."
     )
-    env_key = os.environ.get(ENV_API_KEY, "").strip()
-    if env_key:
-        ui.info(f"  {ENV_API_KEY} is set ({ui.mask(env_key)}); it wins over this file at runtime.")
-    cfg["anthropic_api_key"] = _ask("  Anthropic API key", cfg["anthropic_api_key"], secret=True)
+    current_key = str(cfg.get("api_key") or cfg.get(LEGACY_API_KEY_FIELD) or "")
+    cfg["api_key"] = _ask("  API key", current_key, secret=True)
     cfg["telegram_bot_token"] = _ask("  Telegram bot token", cfg["telegram_bot_token"], secret=True)
     cfg["telegram_chat_id"] = _ask("  Telegram chat ID", cfg["telegram_chat_id"], secret=True)
 

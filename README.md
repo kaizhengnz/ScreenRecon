@@ -94,7 +94,10 @@ Prompt presets are added by editing the file — the wizard does not ask for the
 ```json
 {
   "region": { "left": 100, "top": 100, "width": 600, "height": 400 },
-  "anthropic_api_key": "sk-ant-...",
+  "provider": "anthropic",
+  "model": "claude-haiku-4-5",
+  "api_key": "sk-ant-...",
+  "base_url": "",
   "telegram_bot_token": "123456:ABC-...",
   "telegram_chat_id": "123456789",
   "save_dir": "~/ScreenRecon",
@@ -103,8 +106,7 @@ Prompt presets are added by editing the file — the wizard does not ask for the
     "log": "Find the error messages in this screenshot and explain the likely cause.",
     "table": "Transcribe this table as CSV."
   },
-  "dwell_seconds": 3,
-  "model": "claude-haiku-4-5"
+  "dwell_seconds": 3
 }
 ```
 
@@ -113,19 +115,43 @@ Prompt presets are added by editing the file — the wizard does not ask for the
 | `region` | Screen rectangle. `width`/`height` must be positive; `left`/`top` may be negative for monitors positioned left of or above the primary display. |
 | `monitor` | Optional, written by `--configure` / `--screen`: `{"index": N, "of": M}` records which monitor the region was picked on so the watch banner can show it verbatim. Regenerated whenever the region is re-picked; delete it to force a live recompute. |
 | `dwell_seconds` | How long the mouse must stay inside before firing. Fractional values are allowed. |
-| `model` | Any current AI model with vision. `claude-haiku-4-5` is the default; set `claude-opus-5` for higher accuracy on complex scenes. |
+| `provider` | `anthropic` / `openai` / `google` / `openai_compatible`. Empty means "infer from the model name prefix" (`claude-*` → Anthropic, `gpt-*` / `o*` → OpenAI, `gemini-*` → Google). The compat path requires the field to be set explicitly, together with `base_url`. |
+| `model` | Any vision-capable model ID for the chosen provider. Defaults to `claude-haiku-4-5`; the wizard offers curated shortlists per provider (`claude-opus-5`, `gpt-5`, `gemini-2.5-pro`, `deepseek-vl2`, …) and accepts any typed custom ID. |
+| `api_key` | The key for the chosen provider. Rewritten by `--key`; the wizard prompts for it as part of setup. Legacy 0.1.5 configs may still carry `anthropic_api_key` — it is read as a fallback and migrated on the next save. |
+| `base_url` | Only used when `provider` is `openai_compatible`. Set to the Chat-Completions-compatible endpoint (DeepSeek / Moonshot / Doubao presets are pre-filled by the wizard). |
 | `prompts` | Named presets, selected with `--mode NAME`. |
 | `save_dir` | `~` is expanded and the directory is created if missing. |
 
-`ANTHROPIC_API_KEY` in your environment overrides the key in the config file.
+No environment-variable overrides in 0.1.6+: the config file is the single source of truth for credentials. Users upgrading from 0.1.5 who relied on `ANTHROPIC_API_KEY` should run `screenrecon --key` once to move the value into the file.
 
-### Getting an Anthropic API key
+### Providers and required extras
 
+Optional dependencies keep the install lean — you only pull in the SDKs you actually use.
+
+| Provider | Install | Example models |
+| --- | --- | --- |
+| Anthropic (default) | `pip install screenrecon` | `claude-haiku-4-5`, `claude-opus-5` |
+| OpenAI | `pip install 'screenrecon[openai]'` | `gpt-5`, `gpt-5-mini` |
+| Google Gemini | `pip install 'screenrecon[google]'` | `gemini-2.5-pro`, `gemini-2.5-flash` |
+| OpenAI-compatible (DeepSeek / Kimi / Doubao / custom) | `pip install 'screenrecon[openai]'` | `deepseek-vl2`, `moonshot-v1-8k-vision-preview`, `doubao-1-5-vision-pro-32k-...` |
+| Everything | `pip install 'screenrecon[all]'` | any of the above |
+
+If you pick a provider whose SDK is not installed, the tool prints a `pip install 'screenrecon[...]'` command and exits without touching the network.
+
+### Getting an API key
+
+**Anthropic (Claude).**
 1. Sign up or log in at [console.anthropic.com](https://console.anthropic.com/).
 2. Go to **Settings → API Keys → Create Key**, give it a name like `screenrecon`, and copy the key that appears (it starts with `sk-ant-...`). Anthropic will only show the full key once.
 3. Add billing credit under **Settings → Billing** — vision calls need a paid balance, the free tier is not enough for continuous use.
 
-Create a dedicated key rather than reusing an existing one: you can then revoke or replace it independently, and account-level usage reports make it easy to see what the tool cost you.
+**OpenAI (GPT).** [platform.openai.com](https://platform.openai.com/) → **API keys → Create new secret key** (starts with `sk-...`). Add billing credit under **Settings → Billing**.
+
+**Google (Gemini).** [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) → **Create API key** (starts with `AIza...`). Free-tier quotas cover moderate desktop use; check the current limits before scripting.
+
+**DeepSeek / Moonshot (Kimi) / Doubao.** Each provider's own console (`platform.deepseek.com`, `platform.moonshot.cn`, `console.volcengine.com/ark`). Prepay or bind billing per that provider's flow. Copy the OpenAI-compatible key; `screenrecon --configure` fills in the matching `base_url` when you pick the preset.
+
+Create a dedicated key per tool rather than reusing an existing one: you can then revoke or replace it independently, and account-level usage reports make it easy to see what ScreenRecon cost you.
 
 ### Getting a Telegram bot token and chat ID
 

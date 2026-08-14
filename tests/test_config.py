@@ -1,4 +1,4 @@
-"""Config tests (design doc 8.1): missing fields, invalid values, env override, masking."""
+"""Config tests (design doc 8.1): missing fields, invalid values, migration, masking."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def write_config(tmp_path, payload) -> str:
 def valid_payload(**overrides):
     payload = {
         "region": {"left": 10, "top": 20, "width": 300, "height": 200},
-        "anthropic_api_key": "sk-ant-test-key-value",
+        "api_key": "sk-ant-test-key-value",
         "telegram_bot_token": "123456:ABCDEF-token-value",
         "telegram_chat_id": "987654321",
         "save_dir": "~/ScreenRecon",
@@ -36,16 +36,14 @@ def valid_payload(**overrides):
 # --------------------------------------------------------------------------- #
 
 
-def test_missing_file_yields_defaults(tmp_path, monkeypatch):
-    monkeypatch.delenv(config.ENV_API_KEY, raising=False)
+def test_missing_file_yields_defaults(tmp_path):
     cfg = config.load(tmp_path / "does-not-exist.json")
     assert cfg["region"] == config.DEFAULTS["region"]
     assert cfg["model"] == config.DEFAULT_MODEL
-    assert cfg["anthropic_api_key"] == ""
+    assert cfg["api_key"] == ""
 
 
-def test_partial_region_is_merged_with_defaults(tmp_path, monkeypatch):
-    monkeypatch.delenv(config.ENV_API_KEY, raising=False)
+def test_partial_region_is_merged_with_defaults(tmp_path):
     path = write_config(tmp_path, {"region": {"left": 5}})
     cfg = config.load(path)
     assert cfg["region"]["left"] == 5
@@ -59,8 +57,7 @@ def test_invalid_json_reports_the_file(tmp_path):
         config.load(path)
 
 
-def test_roundtrip_save_and_load(tmp_path, monkeypatch):
-    monkeypatch.delenv(config.ENV_API_KEY, raising=False)
+def test_roundtrip_save_and_load(tmp_path):
     path = tmp_path / "nested" / "config.json"
     saved = config.save(valid_payload(), path)
     assert saved.exists()
@@ -89,16 +86,14 @@ def test_roundtrip_save_and_load(tmp_path, monkeypatch):
         ({"save_dir": ""}, "save_dir"),
     ],
 )
-def test_invalid_values_name_the_field(tmp_path, monkeypatch, payload, expected_field):
-    monkeypatch.delenv(config.ENV_API_KEY, raising=False)
+def test_invalid_values_name_the_field(tmp_path, payload, expected_field):
     path = write_config(tmp_path, valid_payload(**payload))
     with pytest.raises(config.ConfigError) as excinfo:
         config.load(path)
     assert expected_field in str(excinfo.value)
 
 
-def test_partially_specified_region_is_completed_from_defaults(tmp_path, monkeypatch):
-    monkeypatch.delenv(config.ENV_API_KEY, raising=False)
+def test_partially_specified_region_is_completed_from_defaults(tmp_path):
     path = write_config(tmp_path, {"region": {"left": 1, "top": 2, "width": 3}})
     cfg = config.load(path)
     assert cfg["region"]["width"] == 3
@@ -116,9 +111,8 @@ def test_missing_region_field_is_reported_when_validated_directly():
         )
 
 
-def test_negative_origin_is_allowed(tmp_path, monkeypatch):
+def test_negative_origin_is_allowed(tmp_path):
     """Secondary monitors sit at negative coordinates; only width/height must be positive."""
-    monkeypatch.delenv(config.ENV_API_KEY, raising=False)
     path = write_config(
         tmp_path, valid_payload(region={"left": -1920, "top": -50, "width": 800, "height": 600})
     )
@@ -126,10 +120,36 @@ def test_negative_origin_is_allowed(tmp_path, monkeypatch):
     assert cfg["region"]["left"] == -1920
 
 
-def test_float_dwell_seconds_is_allowed(tmp_path, monkeypatch):
-    monkeypatch.delenv(config.ENV_API_KEY, raising=False)
+def test_float_dwell_seconds_is_allowed(tmp_path):
     path = write_config(tmp_path, valid_payload(dwell_seconds=1.5))
     assert config.load(path)["dwell_seconds"] == 1.5
+
+
+def test_unknown_provider_is_rejected(tmp_path):
+    path = write_config(tmp_path, valid_payload(provider="not-a-real-provider"))
+    with pytest.raises(config.ConfigError, match="Unknown provider"):
+        config.load(path)
+
+
+def test_openai_compatible_provider_requires_base_url(tmp_path):
+    path = write_config(
+        tmp_path, valid_payload(provider="openai_compatible", base_url="")
+    )
+    with pytest.raises(config.ConfigError, match="base_url"):
+        config.load(path)
+
+
+def test_openai_compatible_provider_accepts_base_url(tmp_path):
+    path = write_config(
+        tmp_path,
+        valid_payload(
+            provider="openai_compatible",
+            base_url="https://api.deepseek.com/v1",
+        ),
+    )
+    cfg = config.load(path)
+    assert cfg["provider"] == "openai_compatible"
+    assert cfg["base_url"] == "https://api.deepseek.com/v1"
 
 
 # --------------------------------------------------------------------------- #
@@ -138,7 +158,7 @@ def test_float_dwell_seconds_is_allowed(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "field", ["anthropic_api_key", "telegram_bot_token", "telegram_chat_id"]
+    "field", ["api_key", "telegram_bot_token", "telegram_chat_id"]
 )
 def test_missing_credential_blocks_startup(field):
     cfg = config.merge_defaults(valid_payload(**{field: ""}))
@@ -157,26 +177,38 @@ def test_complete_credentials_pass():
 
 
 # --------------------------------------------------------------------------- #
-# Environment override (FR-15)
+# Legacy anthropic_api_key migration (SR-23)
 # --------------------------------------------------------------------------- #
 
 
-def test_env_var_overrides_file_key(tmp_path, monkeypatch):
-    monkeypatch.setenv(config.ENV_API_KEY, "sk-ant-from-environment")
-    path = write_config(tmp_path, valid_payload(anthropic_api_key="sk-ant-from-file"))
-    assert config.load(path)["anthropic_api_key"] == "sk-ant-from-environment"
+def test_legacy_anthropic_api_key_migrates_into_api_key(tmp_path):
+    """A 0.1.5 config with `anthropic_api_key` still works: merge lifts it
+    into `api_key` in memory so every provider dispatch sees it."""
+    payload = valid_payload()
+    del payload["api_key"]
+    payload["anthropic_api_key"] = "sk-ant-legacy-key"
+    path = write_config(tmp_path, payload)
+    cfg = config.load(path)
+    assert cfg["api_key"] == "sk-ant-legacy-key"
 
 
-def test_empty_env_var_does_not_override(tmp_path, monkeypatch):
-    monkeypatch.setenv(config.ENV_API_KEY, "   ")
-    path = write_config(tmp_path, valid_payload(anthropic_api_key="sk-ant-from-file"))
-    assert config.load(path)["anthropic_api_key"] == "sk-ant-from-file"
+def test_api_key_wins_over_legacy_field_when_both_are_set(tmp_path):
+    """The new field is authoritative; the migration is one-way."""
+    payload = valid_payload(api_key="sk-ant-new")
+    payload["anthropic_api_key"] = "sk-ant-old"
+    path = write_config(tmp_path, payload)
+    assert config.load(path)["api_key"] == "sk-ant-new"
 
 
-def test_env_var_satisfies_credential_requirement(tmp_path, monkeypatch):
-    monkeypatch.setenv(config.ENV_API_KEY, "sk-ant-from-environment")
-    path = write_config(tmp_path, valid_payload(anthropic_api_key=""))
-    config.require_credentials(config.load(path))
+def test_save_drops_the_legacy_field_once_api_key_is_populated(tmp_path):
+    """After the first save under the new schema, the legacy field goes away."""
+    payload = valid_payload(api_key="sk-ant-new")
+    payload["anthropic_api_key"] = "sk-ant-old"
+    path = tmp_path / "config.json"
+    config.save(payload, path)
+    on_disk = json.loads(path.read_text(encoding="utf-8"))
+    assert "anthropic_api_key" not in on_disk
+    assert on_disk["api_key"] == "sk-ant-new"
 
 
 # --------------------------------------------------------------------------- #

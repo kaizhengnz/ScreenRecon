@@ -42,7 +42,8 @@ class GoogleProvider:
         except ImportError:
             return Reply(
                 False,
-                "Missing dependency 'google-genai'. Install with: pip install google-genai",
+                "Missing dependency 'google-genai'. "
+                "Install with: pip install 'screenrecon[google]'",
             )
 
         try:
@@ -81,7 +82,11 @@ class GoogleProvider:
         try:
             from google import genai  # noqa: F401
         except ImportError:
-            return False, "Missing dependency 'google-genai'; cannot verify."
+            return (
+                False,
+                "Missing dependency 'google-genai'. "
+                "Install with: pip install 'screenrecon[google]'",
+            )
         try:
             self._client(cfg).models.get(model=model)
         except Exception as exc:

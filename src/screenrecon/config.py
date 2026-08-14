@@ -374,7 +374,6 @@ def _ask_choice(
     width = max(len(preset_label) for preset_label in labels) if labels else 0
     current_preview = current if len(current) <= 60 else current[:57] + "..."
 
-    ui.info(f"  {label}:")
     for index, (preset_label, _, note) in enumerate(presets, start=1):
         ui.info(f"    {index}) {preset_label:<{width}}  ({note})")
     ui.info(f"    {current_index}) (keep current — {current_preview})")
@@ -483,9 +482,8 @@ def _run_wizard(
     ui.info("\n2) Trigger")
     ui.info(
         "   A capture fires when the cursor stays in the region for this many"
-        " seconds.\n"
-        "   After a capture, the cursor must leave and re-enter the region to"
-        " arm the next one."
+        " seconds. After a capture, the cursor must leave and re-enter the"
+        " region to arm the next one."
     )
     cfg["dwell_seconds"] = _ask_float("  dwell seconds", cfg["dwell_seconds"], minimum=0)
 

@@ -254,7 +254,7 @@ def pick_region_or_default(
         return current
 
     if picked is not None:
-        _report_picked_region(picked, display.enumerate_monitors())
+        _report_picked_region(picked)
         return picked
 
     default = default_centered_region_or_none()
@@ -269,8 +269,15 @@ def pick_region_or_default(
     return default
 
 
-def _report_picked_region(region: Region, monitors: list[Region]) -> None:
-    """Print 'Picked: ... (on monitor N of M)' to the UI."""
+def _report_picked_region(region: Region, monitors: list[Region] | None = None) -> None:
+    """Print 'Picked: ... (on monitor N of M)' to the UI.
+
+    ``monitors`` defaults to ``None``, which lets
+    :func:`display.describe_region_monitor` fetch the list itself and swallow
+    the error path — mss raises ``XError`` on a headless Linux (CI, remote
+    build), and the monitor annotation is best-effort UX, not a hard
+    dependency of the picker.
+    """
     from . import display, ui
 
     ui.info(

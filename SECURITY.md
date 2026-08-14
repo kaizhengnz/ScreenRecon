@@ -13,8 +13,9 @@ the chat ID — so we can advise on rotation.
 
 ## What ScreenRecon handles
 
-- **An Anthropic API key** and a **Telegram bot token and chat ID**, stored in
-  your config file.
+- **An AI provider API key** (Anthropic, OpenAI, Google Gemini, or an
+  OpenAI-compatible endpoint like DeepSeek / Moonshot / Doubao) and a
+  **Telegram bot token and chat ID**, stored in your config file.
 - **Screenshots of a region of your screen**, which may contain anything that
   was on it.
 
@@ -37,16 +38,20 @@ These are the properties we consider security bugs if broken:
    file, so it is never briefly readable at the process umask and a symlink
    planted at its path is replaced rather than followed. Windows has no POSIX
    mode bits; there, files are protected only by the profile's ACLs.
-4. **Bounded egress.** The only network destinations are the Anthropic API and
-   `api.telegram.org`. There is no telemetry and no update check.
+4. **Bounded egress.** The only network destinations are the AI provider you
+   configured (Anthropic, OpenAI, Google Gemini, or the `base_url` you set for
+   an OpenAI-compatible endpoint) and `api.telegram.org`. There is no telemetry
+   and no update check.
 
 ## Things to know
 
-- **`ANTHROPIC_BASE_URL` redirects your captures.** The Anthropic SDK honours
-  it, so anything able to set an environment variable in your shell can point
-  the API — and therefore your screenshots and key — at another host.
-  ScreenRecon prints a warning when it is set. `HTTPS_PROXY` and
-  `REQUESTS_CA_BUNDLE` similarly affect both destinations.
+- **Endpoint overrides redirect your captures.** For the Anthropic provider,
+  the SDK honours `ANTHROPIC_BASE_URL` — anything able to set an environment
+  variable in your shell can point the API (and therefore your screenshots and
+  key) at another host, and ScreenRecon prints a warning when it is set. The
+  OpenAI-compatible provider takes its endpoint from the `base_url` config
+  field, which is visible in `screenrecon --show`. `HTTPS_PROXY` and
+  `REQUESTS_CA_BUNDLE` affect every provider.
 - **A config file is as trusted as the code.** `screenrecon --config PATH` will
   use whatever credentials that file contains, so a config you did not write can
   route your captures to someone else's Telegram chat and someone else's API
@@ -54,8 +59,9 @@ These are the properties we consider security bugs if broken:
   chat ID and the resolved archive directory so a substitution is visible.
 - **The archive is not encrypted.** `save_dir` accumulates every capture; manage
   and prune it yourself.
-- **Use a dedicated API key.** Create a separate Anthropic key for this tool so
-  you can revoke it and account for its usage independently.
+- **Use a dedicated API key per provider.** Create a separate key for this tool
+  so you can revoke it and account for its usage independently of the rest of
+  your workload.
 
 ## Supported versions
 

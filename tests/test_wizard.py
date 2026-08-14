@@ -807,6 +807,32 @@ def test_show_migrates_legacy_anthropic_api_key_for_display(tmp_path, capsys):
     assert "sk-ant-l" in out
 
 
+def test_show_reports_a_hand_edited_unknown_provider_as_a_config_error(tmp_path, capsys):
+    """A user who edits the config to `provider: "typo"` must see a crisp
+    'Unknown provider' message, not the last-resort "Unexpected error:
+    KeyError" that get_provider() would otherwise raise."""
+    path = tmp_path / "config.json"
+    payload = _existing_config()
+    payload["provider"] = "not-a-real-provider"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert config.run_show(path) == 1
+    err = capsys.readouterr().err
+    assert "Unknown provider" in err
+    assert "not-a-real-provider" in err
+
+
+def test_set_key_reports_a_hand_edited_unknown_provider_as_a_config_error(tmp_path, capsys):
+    path = tmp_path / "config.json"
+    payload = _existing_config()
+    payload["provider"] = "not-a-real-provider"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert config.run_set_key(path) == 1
+    err = capsys.readouterr().err
+    assert "Unknown provider" in err
+
+
 def test_show_refuses_when_no_config_exists(tmp_path, capsys):
     path = tmp_path / "config.json"  # does not exist
     assert config.run_show(path) == 1

@@ -6,10 +6,11 @@ terminal, pushes the screenshot plus the answer to your Telegram, and files both
 locally.
 
 Open source, `pip install`-able, bring-your-own-key. There is no hosted backend: your API
-key and your screenshots go to Anthropic and to your own Telegram chat, and nowhere else.
+key and your screenshots go to the AI provider you configured and to your own Telegram
+chat, and nowhere else.
 
 ```
-mouse dwells in region ──> capture ──┬──> save PNG
+mouse dwells in region ──> capture ──┬──> save JPEG
                                      └──> AI     ──┬──> terminal
                                                    ├──> save TXT
                                                    └──> Telegram
@@ -19,7 +20,7 @@ mouse dwells in region ──> capture ──┬──> save PNG
 
 - Python 3.10+
 - Windows 10/11, macOS 12+ (Intel or Apple Silicon), or Linux with X11
-- An [Anthropic API key](https://console.anthropic.com/)
+- An API key for one of: Anthropic, OpenAI, Google Gemini, or an OpenAI-compatible endpoint (DeepSeek / Moonshot / Doubao). See [Providers and required extras](#providers-and-required-extras) below.
 - A Telegram bot token and chat ID
 
 Linux note: Wayland is not supported — the cursor position cannot be read there, and
@@ -62,7 +63,7 @@ cursor there will never re-trigger.
 | `screenrecon` | Watch the configured region |
 | `screenrecon --configure` | Interactive setup: drag-to-select region picker, then credentials (verified online) |
 | `screenrecon --screen` | Re-pick just the watched region; every other config field is left alone |
-| `screenrecon --key` | Prompt for a new Anthropic API key only |
+| `screenrecon --key` | Prompt for a new API key for the current provider |
 | `screenrecon --model` | Pick a new AI model only |
 | `screenrecon --prompt` | Pick a new default prompt only |
 | `screenrecon --dwell` | Set dwell seconds only |
@@ -221,12 +222,13 @@ this reminder rather than trying to guess from the pixels.
   shown. Third-party error text is scrubbed before printing, because HTTP libraries embed
   the request URL (which contains the Telegram bot token) in their exceptions. The setup
   wizard reads credentials without echoing them.
-- **Create a dedicated Anthropic API key** for this tool so you can revoke it and account
-  for its usage independently.
-- **Screenshots may contain sensitive information.** They are sent to the Anthropic API
-  and to your own Telegram chat, and stored in `save_dir` — unless `ANTHROPIC_BASE_URL`,
-  `HTTPS_PROXY` or similar environment variables redirect them elsewhere, which
-  ScreenRecon warns about. Managing the archive directory is up to you.
+- **Create a dedicated API key per provider** for this tool so you can revoke it and
+  account for its usage independently of the rest of your workload.
+- **Screenshots may contain sensitive information.** They are sent to whichever AI
+  provider you configured and to your own Telegram chat, and stored in `save_dir` —
+  unless `ANTHROPIC_BASE_URL` (Anthropic), `HTTPS_PROXY`, or an explicit
+  `base_url` for the OpenAI-compatible provider redirects them elsewhere. Managing
+  the archive directory is up to you.
 - **Only use config files you wrote.** `--config` accepts any path, and a config file
   carries the credentials that decide which Telegram chat and which API account your
   captures go to. The watch banner prints the masked chat ID and the resolved archive

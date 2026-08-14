@@ -103,7 +103,8 @@ PROMPT_CHOICES: list[tuple[str, str, str]] = [
         "answer questions in the image",
     ),
 ]
-"""Built-in prompt presets. Same ``(label, value, note)`` shape as :data:`MODEL_CHOICES`."""
+"""Built-in prompt presets. Same ``(label, value, note)`` shape as the entries
+in :data:`MODEL_CHOICES_BY_PROVIDER`."""
 
 DEFAULTS: dict[str, Any] = {
     "region": {"left": 100, "top": 100, "width": 600, "height": 400},
@@ -668,6 +669,12 @@ def _run_single_field_setter(
         print()
         ui.info("Cancelled. Nothing was saved.")
         return 130
+    except ConfigError as exc:
+        # A setter that validates up-front (e.g. run_set_key) surfaces a
+        # broken existing config here before the user has typed anything.
+        ui.error(str(exc))
+        ui.error("Nothing was saved.")
+        return 1
 
     try:
         validate_config(merge_defaults(raw))
@@ -697,8 +704,11 @@ def run_set_key(path: str | os.PathLike[str] | None = None) -> int:
 
     def setter(raw: dict[str, Any]) -> None:
         # Pass a fresh merged view so provider inference sees the migrated
-        # api_key; the write below still goes to `raw`.
+        # api_key; the write below still goes to `raw`. Validate first so a
+        # hand-edited unknown provider surfaces as a crisp ConfigError
+        # rather than a KeyError from get_provider().
         merged = merge_defaults(raw)
+        validate_config(merged)
         provider = _vision.get_provider(merged)
         ui.info(f"  Provider: {provider.display_name}")
         current = raw.get("api_key") or raw.get(LEGACY_API_KEY_FIELD) or ""
@@ -879,6 +889,16 @@ def run_show(path: str | os.PathLike[str] | None = None) -> int:
         return 1
 
     cfg = merge_defaults(raw)
+    # Validate before touching the dispatcher, so a hand-edited unknown
+    # provider surfaces as a crisp ConfigError instead of a KeyError at
+    # get_provider() that the last-resort handler renders as
+    # "Unexpected error: KeyError".
+    try:
+        validate_config(cfg)
+    except ConfigError as exc:
+        ui.error(str(exc))
+        return 1
+
     region = cfg["region"]
     stored_monitor = raw.get("monitor") if isinstance(raw.get("monitor"), dict) else None
     monitor_annotation = (

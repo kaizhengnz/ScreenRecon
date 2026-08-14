@@ -95,7 +95,7 @@ Prompt presets are added by editing the file — the wizard does not ask for the
     "table": "Transcribe this table as CSV."
   },
   "dwell_seconds": 3,
-  "model": "claude-opus-5"
+  "model": "claude-haiku-4-5"
 }
 ```
 
@@ -103,7 +103,7 @@ Prompt presets are added by editing the file — the wizard does not ask for the
 | --- | --- |
 | `region` | Screen rectangle. `width`/`height` must be positive; `left`/`top` may be negative for monitors positioned left of or above the primary display. |
 | `dwell_seconds` | How long the mouse must stay inside before firing. Fractional values are allowed. |
-| `model` | Any current AI model with vision. `claude-opus-5` is the default; `claude-haiku-4-5` is cheaper and faster. |
+| `model` | Any current AI model with vision. `claude-haiku-4-5` is the default; set `claude-opus-5` for higher accuracy on complex scenes. |
 | `prompts` | Named presets, selected with `--mode NAME`. |
 | `save_dir` | `~` is expanded and the directory is created if missing. |
 
@@ -192,10 +192,11 @@ this reminder rather than trying to guess from the pixels.
 
 ## Cost and latency
 
-The default model is `claude-opus-5` with effort set to `low`, which keeps a screenshot
-lookup fast without giving up much accuracy. For high-volume use, set
-`"model": "claude-haiku-4-5"`. Models that do not accept the effort parameter are
-detected automatically and the parameter is dropped.
+The default model is `claude-haiku-4-5` — fast and cheap, plenty for OCR and
+short descriptions. For higher accuracy on complex scenes, set
+`"model": "claude-opus-5"` (with effort `low` under the hood, so a lookup is
+still fast). Models that do not accept the effort parameter are detected
+automatically and the parameter is dropped.
 
 ## Development
 

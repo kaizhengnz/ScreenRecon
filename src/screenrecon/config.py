@@ -40,12 +40,12 @@ def __getattr__(name: str) -> Any:
 DEFAULT_PROMPT = (
     "Describe what is in this screenshot. Be concise and lead with the key information."
 )
-DEFAULT_MODEL = "claude-opus-5"
+DEFAULT_MODEL = "claude-haiku-4-5"
 DEFAULT_SAVE_DIR = "~/ScreenRecon"
 
 MODEL_CHOICES: list[tuple[str, str, str]] = [
-    ("claude-opus-5", "claude-opus-5", "default, high accuracy"),
-    ("claude-haiku-4-5", "claude-haiku-4-5", "cheaper, faster"),
+    ("claude-opus-5", "claude-opus-5", "high accuracy, more expensive"),
+    ("claude-haiku-4-5", "claude-haiku-4-5", "cheaper and faster — the default"),
 ]
 """Built-in model choices for the wizard: ``(display_label, stored_value, note)``.
 

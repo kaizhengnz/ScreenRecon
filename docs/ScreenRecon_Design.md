@@ -285,8 +285,8 @@ overrides the check for an all-X11 application stack.
 
 - SDK: the official `anthropic` Python SDK, floor `>=0.104` (the first version
   whose `messages.create` accepts `output_config`).
-- Model: config field `model`, default `claude-opus-5`. `claude-haiku-4-5` is
-  documented as the cheaper, faster alternative.
+- Model: config field `model`, default `claude-haiku-4-5`. `claude-opus-5` is
+  documented as the higher-accuracy alternative for complex scenes.
 - Request: a single user message whose content is
   `[image(base64 PNG), text(prompt)]`, with `output_config={"effort": "low"}`.
   Reading a screenshot is a light task, and low effort keeps latency and cost
@@ -368,7 +368,7 @@ otherwise `~/.config/screenrecon/config.json`.
     "log": "Find the error messages in this screenshot and explain the likely cause."
   },
   "dwell_seconds": 3,
-  "model": "claude-opus-5"
+  "model": "claude-haiku-4-5"
 }
 ```
 

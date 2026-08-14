@@ -96,6 +96,53 @@ def test_repeated_invalid_answers_give_up(answers):
         config._ask_int("region width", 600)
 
 
+def test_choice_picks_a_preset_by_number(answers):
+    """Numbered input `2` returns the second preset's value."""
+    scripted, _ = answers
+    scripted.append("2")
+    assert (
+        config._ask_choice("AI model", config.MODEL_CHOICES, "claude-opus-5")
+        == "claude-haiku-4-5"
+    )
+
+
+def test_choice_enter_keeps_current_via_last_index(answers):
+    """Enter defaults to index N+1 (current), so the current value survives."""
+    scripted, _ = answers
+    scripted.append("")
+    assert (
+        config._ask_choice("AI model", config.MODEL_CHOICES, "claude-sonnet-5-preview")
+        == "claude-sonnet-5-preview"
+    )
+
+
+def test_choice_typed_text_becomes_a_custom_value(answers):
+    """Non-numeric input passes through so future models work without a code change."""
+    scripted, _ = answers
+    scripted.append("claude-brand-new-model")
+    assert (
+        config._ask_choice("AI model", config.MODEL_CHOICES, "claude-opus-5")
+        == "claude-brand-new-model"
+    )
+
+
+def test_choice_out_of_range_number_retries(answers):
+    """A number outside 1..N+1 warns and re-prompts rather than accepting it."""
+    scripted, _ = answers
+    scripted.extend(["9", "0", "2"])
+    assert (
+        config._ask_choice("AI model", config.MODEL_CHOICES, "claude-opus-5")
+        == "claude-haiku-4-5"
+    )
+
+
+def test_choice_gives_up_after_repeated_invalid_answers(answers):
+    scripted, _ = answers
+    scripted.extend(["9"] * (config.MAX_PROMPT_RETRIES + 2))
+    with pytest.raises(config.WizardAborted):
+        config._ask_choice("AI model", config.MODEL_CHOICES, "claude-opus-5")
+
+
 def test_minimum_is_enforced(answers):
     scripted, _ = answers
     scripted.extend(["0", "-5", "800"])

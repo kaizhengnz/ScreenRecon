@@ -43,6 +43,16 @@ DEFAULT_PROMPT = (
 DEFAULT_MODEL = "claude-opus-5"
 DEFAULT_SAVE_DIR = "~/ScreenRecon"
 
+MODEL_CHOICES: list[tuple[str, str]] = [
+    ("claude-opus-5", "default, high accuracy"),
+    ("claude-haiku-4-5", "cheaper, faster"),
+]
+"""Built-in model choices offered as numbered options in the wizard.
+
+The wizard tacks the current value on as the final numbered option (index
+``len(MODEL_CHOICES) + 1``) so pressing Enter always maps to "keep current".
+"""
+
 ENV_API_KEY = "ANTHROPIC_API_KEY"
 
 DEFAULTS: dict[str, Any] = {
@@ -318,6 +328,49 @@ def _ask_float(label: str, current: Any, *, minimum: float | None = None) -> flo
     raise WizardAborted(f"{label}: too many invalid answers, giving up.")
 
 
+def _ask_choice(
+    label: str,
+    presets: list[tuple[str, str]],
+    current: str,
+) -> str:
+    """Present ``presets`` as numbered options 1..N, with ``current`` as option N+1.
+
+    Behaviour:
+
+    - Input a number in ``1..N+1`` → returns that option's value.
+    - Input any non-empty non-numeric text → returned as a custom value (so
+      users can pin a model ID the wizard does not know about yet).
+    - Enter → keeps ``current`` (the prompt hint is ``[N+1]``; empty answer
+      resolves to that index and therefore to the current value).
+
+    Number out of range warns and re-prompts, up to ``MAX_PROMPT_RETRIES``.
+    """
+    current_index = len(presets) + 1
+    values = [value for value, _ in presets] + [current]
+    width = max(len(value) for value in values)
+
+    ui.info(f"  {label}:")
+    for index, (value, note) in enumerate(presets, start=1):
+        ui.info(f"    {index}) {value:<{width}}  ({note})")
+    ui.info(f"    {current_index}) {current:<{width}}  (current)")
+
+    for _ in range(MAX_PROMPT_RETRIES):
+        answer = _ask(
+            f"    Enter 1-{current_index} or type any {label} ID",
+            str(current_index),
+        ).strip()
+        if answer.isdigit():
+            number = int(answer)
+            if 1 <= number <= len(presets):
+                return presets[number - 1][0]
+            if number == current_index:
+                return current
+            ui.warn(f"    Choice must be 1-{current_index}, please try again.")
+            continue
+        return answer  # custom value
+    raise WizardAborted(f"{label}: too many invalid answers, giving up.")
+
+
 def _prompt_region(
     current: dict[str, Any],
     picker_factory: PickerFactory | None,
@@ -403,7 +456,7 @@ def _run_wizard(
 
     ui.info("\n2) Trigger and model")
     cfg["dwell_seconds"] = _ask_float("  dwell seconds", cfg["dwell_seconds"], minimum=0)
-    cfg["model"] = _ask("  AI model", cfg["model"])
+    cfg["model"] = _ask_choice("AI model", MODEL_CHOICES, str(cfg["model"]))
     cfg["prompt"] = _ask("  default prompt", cfg["prompt"])
 
     ui.info("\n3) Credentials (never echoed in full)")

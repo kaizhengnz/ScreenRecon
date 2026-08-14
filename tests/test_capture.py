@@ -102,14 +102,22 @@ def test_downscaling_keeps_a_tall_image_tall():
 # --------------------------------------------------------------------------- #
 
 
-def test_to_png_bytes_produces_a_png():
-    data = capture.to_png_bytes(solid())
-    assert data.startswith(b"\x89PNG\r\n\x1a\n")
+def test_to_jpeg_bytes_produces_a_jpeg():
+    data = capture.to_jpeg_bytes(solid())
+    # SOI marker for every JPEG file.
+    assert data.startswith(b"\xff\xd8\xff")
 
 
 def test_encode_failure_becomes_a_capture_error():
     with pytest.raises(capture.CaptureError):
-        capture.to_png_bytes(object())
+        capture.to_jpeg_bytes(object())
+
+
+def test_jpeg_encoder_handles_rgba_input():
+    """mss on some backends returns RGBA; JPEG has no alpha and must not raise."""
+    rgba = Image.new("RGBA", (4, 4), (10, 20, 30, 200))
+    data = capture.to_jpeg_bytes(rgba)
+    assert data.startswith(b"\xff\xd8\xff")
 
 
 def test_bgra_conversion_does_not_swap_red_and_blue():

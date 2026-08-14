@@ -1,6 +1,6 @@
 """Local archive (design doc 5.6).
 
-Files are named ``YYYYMMDD_HHMMSS.png`` with a matching ``.txt`` (UTF-8). The
+Files are named ``YYYYMMDD_HHMMSS.jpg`` with a matching ``.txt`` (UTF-8). The
 directory is created if missing (``~`` is expanded). Write failures print a
 warning and never interrupt the watch loop.
 
@@ -128,22 +128,27 @@ def new_stem(directory: Path, now: datetime | None = None) -> str:
 
     Consecutive triggers are always separated by the mouse leaving the region, so
     same-second collisions are effectively impossible there — but the ``ask``
-    subcommand can be run twice within one second, so back off anyway.
+    subcommand can be run twice within one second, so back off anyway. The
+    collision check covers ``.jpg`` (current), ``.png`` (pre-0.1.5 archives the
+    user may still have around) and ``.txt`` so a new run never overwrites an
+    old triplet even when the format changed under it.
     """
     base = (now or datetime.now()).strftime("%Y%m%d_%H%M%S")
     stem = base
     counter = 1
-    while (directory / f"{stem}.png").exists() or (directory / f"{stem}.txt").exists():
+    while any(
+        (directory / f"{stem}{ext}").exists() for ext in (".jpg", ".png", ".txt")
+    ):
         stem = f"{base}_{counter}"
         counter += 1
     return stem
 
 
-def save_png(directory: Path, stem: str, png_bytes: bytes) -> Path | None:
-    """Write the PNG. On failure, warn and return None."""
-    target = directory / f"{stem}.png"
+def save_jpeg(directory: Path, stem: str, jpeg_bytes: bytes) -> Path | None:
+    """Write the JPEG. On failure, warn and return None."""
+    target = directory / f"{stem}.jpg"
     try:
-        write_private_bytes(target, png_bytes)
+        write_private_bytes(target, jpeg_bytes)
     except OSError as exc:
         ui.warn(f"Could not save the screenshot ({target}): {exc.strerror or exc}")
         return None

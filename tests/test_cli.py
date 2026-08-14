@@ -38,9 +38,22 @@ def calls(monkeypatch):
         recorded[name] = value
         return 0
 
-    monkeypatch.setattr(watcher, "run", lambda cfg, prompt: record("watch", prompt))
+    def record_watch(cfg, prompt, *, debug=False):
+        record("watch", prompt)
+        record("debug", debug)
+        return 0
+
+    monkeypatch.setattr(watcher, "run", record_watch)
     monkeypatch.setattr(watcher, "run_ask", lambda cfg, question: record("ask", question))
     monkeypatch.setattr(config, "run_wizard", lambda path: record("wizard", path))
+    monkeypatch.setattr(config, "run_set_region", lambda path: record("set_region", path))
+    monkeypatch.setattr(config, "run_set_key", lambda path: record("set_key", path))
+    monkeypatch.setattr(config, "run_set_model", lambda path: record("set_model", path))
+    monkeypatch.setattr(config, "run_set_prompt", lambda path: record("set_prompt", path))
+    monkeypatch.setattr(config, "run_set_dwell", lambda path: record("set_dwell", path))
+    monkeypatch.setattr(config, "run_set_save_dir", lambda path: record("set_save_dir", path))
+    monkeypatch.setattr(config, "run_set_telegram", lambda path: record("set_telegram", path))
+    monkeypatch.setattr(config, "run_show", lambda path: record("show", path))
     return recorded
 
 
@@ -52,6 +65,12 @@ def calls(monkeypatch):
 def test_no_arguments_starts_the_watch_loop(config_file, calls):
     assert cli.main(["--config", config_file]) == 0
     assert calls["watch"] == "default prompt"
+    assert calls["debug"] is False
+
+
+def test_debug_flag_is_forwarded_to_the_watch_loop(config_file, calls):
+    assert cli.main(["--config", config_file, "--debug"]) == 0
+    assert calls["debug"] is True
 
 
 def test_mode_selects_the_preset(config_file, calls):
@@ -62,6 +81,47 @@ def test_mode_selects_the_preset(config_file, calls):
 def test_configure_runs_the_wizard(config_file, calls):
     assert cli.main(["--config", config_file, "--configure"]) == 0
     assert calls["wizard"] == config_file
+
+
+def test_screen_re_picks_only_the_region(config_file, calls):
+    assert cli.main(["--config", config_file, "--screen"]) == 0
+    assert calls["set_region"] == config_file
+    assert "watch" not in calls
+
+
+def test_key_sets_only_the_api_key(config_file, calls):
+    assert cli.main(["--config", config_file, "--key"]) == 0
+    assert calls["set_key"] == config_file
+    assert "watch" not in calls
+
+
+def test_model_sets_only_the_model(config_file, calls):
+    assert cli.main(["--config", config_file, "--model"]) == 0
+    assert calls["set_model"] == config_file
+    assert "watch" not in calls
+
+
+@pytest.mark.parametrize(
+    ("flag", "recorded_key"),
+    [
+        ("--prompt", "set_prompt"),
+        ("--dwell", "set_dwell"),
+        ("--save-dir", "set_save_dir"),
+        ("--telegram", "set_telegram"),
+    ],
+)
+def test_single_field_setters_route_to_their_config_helpers(
+    config_file, calls, flag, recorded_key
+):
+    assert cli.main(["--config", config_file, flag]) == 0
+    assert calls[recorded_key] == config_file
+    assert "watch" not in calls
+
+
+def test_show_prints_config_and_skips_the_watch_loop(config_file, calls):
+    assert cli.main(["--config", config_file, "--show"]) == 0
+    assert calls["show"] == config_file
+    assert "watch" not in calls
 
 
 def test_ask_passes_the_joined_question(config_file, calls):
@@ -79,24 +139,6 @@ def test_ask_with_a_mode_uses_the_preset_as_the_question(config_file, calls):
     assert calls["ask"] == "find errors"
 
 
-def test_show_cursor_flag_gets_a_friendly_error(capsys):
-    """--show-cursor was removed; the setup wizard now has a picker. Guide the user."""
-    assert cli.main(["--show-cursor"]) == 2
-    err = capsys.readouterr().err
-    assert "--show-cursor was removed" in err
-    assert "--configure" in err
-
-
-@pytest.mark.parametrize("with_flag", ["--help", "-h", "--version"])
-def test_show_cursor_does_not_hijack_help_or_version(with_flag, capsys):
-    """`--show-cursor --help` must still show help — help/version always work."""
-    with pytest.raises(SystemExit) as excinfo:
-        cli.main(["--show-cursor", with_flag])
-    assert excinfo.value.code == 0
-    err = capsys.readouterr().err
-    assert "--show-cursor was removed" not in err
-
-
 # --------------------------------------------------------------------------- #
 # Rejected combinations
 # --------------------------------------------------------------------------- #
@@ -107,6 +149,22 @@ def test_show_cursor_does_not_hijack_help_or_version(with_flag, capsys):
     [
         ["--configure", "ask", "q"],
         ["--mode", "log", "--configure"],
+        ["--screen", "--configure"],
+        ["--screen", "--debug"],
+        ["--screen", "--mode", "log"],
+        ["--screen", "ask", "q"],
+        ["--key", "--configure"],
+        ["--model", "--debug"],
+        ["--screen", "--key"],
+        ["--screen", "--model"],
+        ["--key", "--model"],
+        ["--prompt", "--dwell"],
+        ["--save-dir", "--telegram"],
+        ["--telegram", "ask", "q"],
+        ["--prompt", "--configure"],
+        ["--show", "--configure"],
+        ["--show", "--screen"],
+        ["--show", "ask", "q"],
     ],
 )
 def test_conflicting_flags_exit_two(argv):
@@ -141,16 +199,17 @@ def test_missing_credentials_exit_one(tmp_path, monkeypatch, capsys):
 
 
 def test_keyboard_interrupt_exits_130(config_file, monkeypatch):
-    monkeypatch.setattr(
-        watcher, "run", lambda cfg, prompt: (_ for _ in ()).throw(KeyboardInterrupt())
-    )
+    def interrupt(cfg, prompt, *, debug=False):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(watcher, "run", interrupt)
     assert cli.main(["--config", config_file]) == 130
 
 
 def test_unexpected_errors_are_caught_and_scrubbed(config_file, monkeypatch, capsys):
     """A traceback here would carry the credentials in its frame locals."""
 
-    def explode(cfg, prompt):
+    def explode(cfg, prompt, *, debug=False):
         raise RuntimeError(f"boom with key {cfg['anthropic_api_key']}")
 
     monkeypatch.setattr(watcher, "run", explode)

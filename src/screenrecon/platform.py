@@ -62,6 +62,7 @@ class _POINT(ctypes.Structure):
 
 _WINDOWS_ACCESS_DENIED = 5
 _DPI_PER_MONITOR_AWARE = 2
+_DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
 
 
 def ensure_dpi_awareness() -> None:
@@ -69,9 +70,24 @@ def ensure_dpi_awareness() -> None:
 
     Call this before anything imports mss, so the coordinate space is established
     by us rather than by whichever module happens to load first.
+
+    Prefers per-monitor DPI awareness *v2* over v1: only v2 makes cross-monitor
+    coordinates physical pixels for a window that spans monitors of different
+    DPIs, which is exactly what the picker overlay does. Under v1 the picker's
+    ``event.x_root/y_root`` come back in the primary monitor's logical space,
+    so a selection dragged on a scaled secondary monitor gets saved with
+    coordinates that land on the primary — and mss then captures the wrong
+    region. Falls through to v1 / system awareness on older Windows or when
+    awareness is already pinned by a manifest or a compatibility shim.
     """
     if sys.platform != "win32":
         return
+    try:
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(  # type: ignore[attr-defined]
+            ctypes.c_void_p(_DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
+        )
+    except Exception:
+        pass
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(  # type: ignore[attr-defined]
             _DPI_PER_MONITOR_AWARE

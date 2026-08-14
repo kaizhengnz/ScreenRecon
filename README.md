@@ -61,11 +61,20 @@ cursor there will never re-trigger.
 | --- | --- |
 | `screenrecon` | Watch the configured region |
 | `screenrecon --configure` | Interactive setup: drag-to-select region picker, then credentials (verified online) |
+| `screenrecon --screen` | Re-pick just the watched region; every other config field is left alone |
+| `screenrecon --key` | Prompt for a new Anthropic API key only |
+| `screenrecon --model` | Pick a new AI model only |
+| `screenrecon --prompt` | Pick a new default prompt only |
+| `screenrecon --dwell` | Set dwell seconds only |
+| `screenrecon --save-dir` | Set the archive directory only |
+| `screenrecon --telegram` | Prompt for Telegram bot token + chat ID (as a pair) |
+| `screenrecon --show` | Print the current config (credentials masked) and exit |
 | `screenrecon --mode NAME` | Watch using the `prompts.NAME` preset instead of the default prompt |
 | `screenrecon ask "question"` | Capture once, answer one question, exit |
 | `screenrecon ask` | Capture once, then keep asking questions about that screenshot |
 | `screenrecon --mode NAME ask` | Capture once and ask the `prompts.NAME` preset |
 | `screenrecon --config PATH` | Use an alternative config file |
+| `screenrecon --debug` | Watch as usual and show a persistent red outline around the region (visual sanity check) |
 | `screenrecon --version` | Print the version |
 
 Global flags come before the subcommand: `screenrecon --config PATH ask "..."`,
@@ -102,12 +111,21 @@ Prompt presets are added by editing the file — the wizard does not ask for the
 | Field | Notes |
 | --- | --- |
 | `region` | Screen rectangle. `width`/`height` must be positive; `left`/`top` may be negative for monitors positioned left of or above the primary display. |
+| `monitor` | Optional, written by `--configure` / `--screen`: `{"index": N, "of": M}` records which monitor the region was picked on so the watch banner can show it verbatim. Regenerated whenever the region is re-picked; delete it to force a live recompute. |
 | `dwell_seconds` | How long the mouse must stay inside before firing. Fractional values are allowed. |
 | `model` | Any current AI model with vision. `claude-haiku-4-5` is the default; set `claude-opus-5` for higher accuracy on complex scenes. |
 | `prompts` | Named presets, selected with `--mode NAME`. |
 | `save_dir` | `~` is expanded and the directory is created if missing. |
 
 `ANTHROPIC_API_KEY` in your environment overrides the key in the config file.
+
+### Getting an Anthropic API key
+
+1. Sign up or log in at [console.anthropic.com](https://console.anthropic.com/).
+2. Go to **Settings → API Keys → Create Key**, give it a name like `screenrecon`, and copy the key that appears (it starts with `sk-ant-...`). Anthropic will only show the full key once.
+3. Add billing credit under **Settings → Billing** — vision calls need a paid balance, the free tier is not enough for continuous use.
+
+Create a dedicated key rather than reusing an existing one: you can then revoke or replace it independently, and account-level usage reports make it easy to see what the tool cost you.
 
 ### Getting a Telegram bot token and chat ID
 
@@ -123,7 +141,7 @@ whether both values are right.
 Each trigger writes two files into `save_dir`:
 
 ```
-20260812_143052.png    the captured region
+20260812_143052.jpg    the captured region (JPEG, quality 90)
 20260812_143052.txt    the recognised text (UTF-8)
 ```
 

@@ -412,24 +412,53 @@ def _ask_choice(
 
 def _prompt_region(
     current: dict[str, Any],
+    current_monitor: dict[str, int] | None,
     picker_factory: PickerFactory | None,
 ) -> dict[str, Any]:
     """Print the current region, offer to update it, and delegate to the picker.
 
     Kept intentionally thin — the picker owns the whole "give me a region"
     concern (open, cancel-fallback, PickerError-fallback, monitor reporting).
+    ``current_monitor`` is the config's stored ``monitor`` field (if any);
+    the "Current" line uses it verbatim rather than recomputing, so what the
+    user sees matches what the config records.
     """
-    from . import display, picker as picker_module
+    from . import display
+    from . import picker as picker_module
 
+    annotation = (
+        display.format_monitor_info(current_monitor)
+        or display.describe_region_monitor(current)
+    )
     ui.info(
         f"   Current: left={current.get('left')} top={current.get('top')} "
         f"width={current.get('width')} height={current.get('height')}"
-        + display.describe_region_monitor(current)
+        + annotation
     )
     answer = _ask("   Update this region?", "N").strip().lower()
     if answer in ("y", "yes"):
         return picker_module.pick_region_or_default(current, picker_factory)
     return current
+
+
+def _apply_monitor_info(
+    target: dict[str, Any], region: dict[str, Any]
+) -> None:
+    """Compute the monitor for ``region`` right now and write / clear
+    ``target["monitor"]`` accordingly.
+
+    The stored value is what the user chose — it does not drift as monitors
+    are plugged / unplugged or as `mss` reports them differently across DPI
+    contexts (the SR-20 class of confusion). Clearing on failure prevents a
+    stale annotation from lingering when the enumeration cannot be trusted.
+    """
+    from . import display
+
+    info = display.resolve_monitor_info(region)
+    if info is not None:
+        target["monitor"] = info
+    elif "monitor" in target:
+        del target["monitor"]
 
 
 def run_wizard(
@@ -462,11 +491,253 @@ def run_wizard(
         return 1
 
 
+def run_set_region(
+    path: str | os.PathLike[str] | None = None,
+    *,
+    picker_factory: PickerFactory | None = None,
+) -> int:
+    """Re-pick just the watched region; leave every other config field alone.
+
+    For the "I moved monitors / changed scaling / want to reframe" case, where
+    the full wizard (credentials verification, prompt/model choice, etc.) is
+    overkill. Refuses to run if no config exists yet — the user needs to have
+    gone through `--configure` at least once so credentials are present.
+    """
+    from . import display
+    from . import picker as picker_module
+
+    resolved = config_path(path)
+    raw = read_raw(resolved)
+    if not raw:
+        ui.error(
+            f"No config to update at {resolved}. "
+            "Run 'screenrecon --configure' first to set credentials and save directory."
+        )
+        return 1
+
+    cfg = merge_defaults(raw)
+    ui.rule("ScreenRecon set region")
+    ui.info(f"Config file: {resolved}")
+    stored_monitor = raw.get("monitor") if isinstance(raw.get("monitor"), dict) else None
+    current_annotation = (
+        display.format_monitor_info(stored_monitor)
+        or display.describe_region_monitor(cfg["region"])
+    )
+    ui.info(
+        f"   Current: left={cfg['region'].get('left')} top={cfg['region'].get('top')} "
+        f"width={cfg['region'].get('width')} height={cfg['region'].get('height')}"
+        + current_annotation
+    )
+    new_region = picker_module.pick_region_or_default(
+        dict(cfg["region"]), picker_factory
+    )
+    raw["region"] = new_region
+    _apply_monitor_info(raw, new_region)
+
+    try:
+        validate_config(merge_defaults(raw))
+    except ConfigError as exc:
+        ui.error(str(exc))
+        return 1
+
+    try:
+        saved_to = save(raw, resolved)
+    except ConfigError as exc:
+        ui.error(str(exc))
+        return 1
+    ui.rule()
+    ui.info(f"Region saved to {saved_to}")
+    return 0
+
+
+def _run_single_field_setter(
+    path: str | os.PathLike[str] | None,
+    banner: str,
+    setter: Callable[[dict[str, Any]], None],
+) -> int:
+    """Shared skeleton for ``--key`` / ``--model``: load, mutate one field, save.
+
+    Refuses to run without an existing config so credentials are always set
+    via ``--configure`` first — mirrors ``run_set_region``. ``setter`` mutates
+    the raw dict in place; on ``WizardAborted`` / ``KeyboardInterrupt`` the
+    file is left untouched.
+    """
+    resolved = config_path(path)
+    raw = read_raw(resolved)
+    if not raw:
+        ui.error(
+            f"No config to update at {resolved}. "
+            "Run 'screenrecon --configure' first to set credentials and save directory."
+        )
+        return 1
+
+    ui.rule(banner)
+    ui.info(f"Config file: {resolved}")
+    try:
+        setter(raw)
+    except WizardAborted as exc:
+        ui.error(str(exc))
+        ui.error("Nothing was saved.")
+        return 1
+    except KeyboardInterrupt:
+        print()
+        ui.info("Cancelled. Nothing was saved.")
+        return 130
+
+    try:
+        validate_config(merge_defaults(raw))
+    except ConfigError as exc:
+        ui.error(str(exc))
+        return 1
+
+    try:
+        saved_to = save(raw, resolved)
+    except ConfigError as exc:
+        ui.error(str(exc))
+        return 1
+    ui.rule()
+    ui.info(f"Saved to {saved_to}")
+    return 0
+
+
+def run_set_key(path: str | os.PathLike[str] | None = None) -> int:
+    """Prompt for a new Anthropic API key and save it; leave every other field alone."""
+    def setter(raw: dict[str, Any]) -> None:
+        env_key = os.environ.get(ENV_API_KEY, "").strip()
+        if env_key:
+            ui.info(
+                f"  {ENV_API_KEY} is set ({ui.mask(env_key)}); it wins over this file at runtime."
+            )
+        current = raw.get("anthropic_api_key", DEFAULTS["anthropic_api_key"])
+        raw["anthropic_api_key"] = _ask("  Anthropic API key", current, secret=True)
+
+    return _run_single_field_setter(path, "ScreenRecon set API key", setter)
+
+
+def run_set_model(path: str | os.PathLike[str] | None = None) -> int:
+    """Pick a new AI model and save it; leave every other field alone."""
+    def setter(raw: dict[str, Any]) -> None:
+        current = str(raw.get("model", DEFAULT_MODEL))
+        raw["model"] = _ask_choice(
+            "AI model", MODEL_CHOICES, current, default=DEFAULT_MODEL
+        )
+
+    return _run_single_field_setter(path, "ScreenRecon set model", setter)
+
+
+def run_set_prompt(path: str | os.PathLike[str] | None = None) -> int:
+    """Pick a new default prompt and save it; leave every other field alone."""
+    def setter(raw: dict[str, Any]) -> None:
+        current = str(raw.get("prompt", DEFAULT_PROMPT))
+        raw["prompt"] = _ask_choice(
+            "default prompt", PROMPT_CHOICES, current, default=DEFAULT_PROMPT
+        )
+
+    return _run_single_field_setter(path, "ScreenRecon set default prompt", setter)
+
+
+def run_set_dwell(path: str | os.PathLike[str] | None = None) -> int:
+    """Prompt for a new dwell-seconds value and save it; leave every other field alone."""
+    def setter(raw: dict[str, Any]) -> None:
+        current = raw.get("dwell_seconds", DEFAULTS["dwell_seconds"])
+        raw["dwell_seconds"] = _ask_float("  dwell seconds", current, minimum=0)
+
+    return _run_single_field_setter(path, "ScreenRecon set dwell seconds", setter)
+
+
+def run_set_save_dir(path: str | os.PathLike[str] | None = None) -> int:
+    """Prompt for a new save directory and save it; leave every other field alone."""
+    def setter(raw: dict[str, Any]) -> None:
+        current = raw.get("save_dir", DEFAULT_SAVE_DIR)
+        raw["save_dir"] = _ask("  save directory", current)
+
+    return _run_single_field_setter(path, "ScreenRecon set save directory", setter)
+
+
+def run_show(path: str | os.PathLike[str] | None = None) -> int:
+    """Print the current config, credentials masked, and exit 0.
+
+    Read-only companion to the single-field setters: a user who wants to know
+    "what is set to what right now" no longer has to open the JSON file (and
+    handle unfamiliar escaping) or re-run `--configure` just to see the
+    current values. Credentials pass through :func:`ui.mask` so scrollback
+    stays safe to share.
+
+    Refuses if no config exists yet, matching the setters — nothing useful
+    to show, and the message points at `--configure`.
+    """
+    from . import display
+
+    resolved = config_path(path)
+    raw = read_raw(resolved)
+    if not raw:
+        ui.error(
+            f"No config at {resolved}. Run 'screenrecon --configure' to create one."
+        )
+        return 1
+
+    cfg = merge_defaults(raw)
+    region = cfg["region"]
+    stored_monitor = raw.get("monitor") if isinstance(raw.get("monitor"), dict) else None
+    monitor_annotation = (
+        display.format_monitor_info(stored_monitor)
+        or display.describe_region_monitor(region)
+    )
+    env_key = os.environ.get(ENV_API_KEY, "").strip()
+
+    ui.rule("ScreenRecon config")
+    ui.info(f"Config file: {resolved}")
+    ui.info("")
+    ui.info(
+        f"  Region:          left={region.get('left')} top={region.get('top')} "
+        f"width={region.get('width')} height={region.get('height')}{monitor_annotation}"
+    )
+    ui.info(f"  Dwell:           {cfg['dwell_seconds']} s")
+    ui.info(f"  Model:           {cfg['model']}")
+    ui.info(f"  Default prompt:  {cfg['prompt']}")
+    presets = sorted((cfg.get("prompts") or {}).keys())
+    ui.info(f"  Prompt presets:  {', '.join(presets) if presets else '(none)'}")
+    ui.info(f"  Save directory:  {cfg['save_dir']}")
+    ui.info(f"  Anthropic key:   {ui.mask(str(cfg['anthropic_api_key']))}")
+    if env_key:
+        ui.info(
+            f"                   ({ENV_API_KEY} is set to {ui.mask(env_key)}; "
+            "it wins over the file at runtime.)"
+        )
+    ui.info(f"  Telegram bot:    {ui.mask(str(cfg['telegram_bot_token']))}")
+    ui.info(f"  Telegram chat:   {ui.mask(str(cfg['telegram_chat_id']))}")
+    return 0
+
+
+def run_set_telegram(path: str | os.PathLike[str] | None = None) -> int:
+    """Prompt for both Telegram credentials and save them; leave every other field alone.
+
+    The token and chat ID are prompted together because they are a matched pair
+    — a valid token with the wrong chat ID delivers to somewhere the user did
+    not intend. Splitting them into two flags would let the user change one
+    without the other and silently misdeliver captures.
+    """
+    def setter(raw: dict[str, Any]) -> None:
+        raw["telegram_bot_token"] = _ask(
+            "  Telegram bot token",
+            raw.get("telegram_bot_token", DEFAULTS["telegram_bot_token"]),
+            secret=True,
+        )
+        raw["telegram_chat_id"] = _ask(
+            "  Telegram chat ID",
+            raw.get("telegram_chat_id", DEFAULTS["telegram_chat_id"]),
+            secret=True,
+        )
+
+    return _run_single_field_setter(path, "ScreenRecon set Telegram credentials", setter)
+
+
 def _run_wizard(
     path: str | os.PathLike[str] | None = None,
     picker_factory: PickerFactory | None = None,
 ) -> int:
-    from . import notify, picker as picker_module, vision  # lazy: --help skips SDK
+    from . import notify, vision  # lazy: --help skips SDK
+    from . import picker as picker_module
 
     resolved = config_path(path)
     raw = read_raw(resolved)
@@ -492,7 +763,9 @@ def _run_wizard(
     ui.info("Press Enter to keep the current value. Nothing is saved until every step is done.\n")
 
     ui.info("1) Watched region")
-    cfg["region"] = _prompt_region(dict(cfg["region"]), picker_factory)
+    stored_monitor = raw.get("monitor") if isinstance(raw.get("monitor"), dict) else None
+    cfg["region"] = _prompt_region(dict(cfg["region"]), stored_monitor, picker_factory)
+    _apply_monitor_info(cfg, cfg["region"])
 
     ui.info("\n2) Trigger")
     ui.info(

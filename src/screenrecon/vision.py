@@ -7,7 +7,7 @@ message and returned, so the watch loop keeps running (NFR-2).
 from __future__ import annotations
 
 import base64
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -39,23 +39,23 @@ class Reply:
 # --------------------------------------------------------------------------- #
 
 
-def image_block(png_bytes: bytes) -> dict[str, Any]:
-    """Wrap PNG bytes in an AI image content block."""
+def image_block(image_bytes: bytes) -> dict[str, Any]:
+    """Wrap JPEG bytes in an AI image content block."""
     return {
         "type": "image",
         "source": {
             "type": "base64",
-            "media_type": "image/png",
-            "data": base64.standard_b64encode(png_bytes).decode("ascii"),
+            "media_type": "image/jpeg",
+            "data": base64.standard_b64encode(image_bytes).decode("ascii"),
         },
     }
 
 
-def user_turn(png_bytes: bytes | None, text: str) -> dict[str, Any]:
+def user_turn(image_bytes: bytes | None, text: str) -> dict[str, Any]:
     """Build a user message with an optional image followed by text."""
     content: list[dict[str, Any]] = []
-    if png_bytes is not None:
-        content.append(image_block(png_bytes))
+    if image_bytes is not None:
+        content.append(image_block(image_bytes))
     content.append({"type": "text", "text": text})
     return {"role": "user", "content": content}
 
@@ -124,9 +124,86 @@ def ask(api_key: str, model: str, messages: Sequence[dict[str, Any]]) -> Reply:
     return Reply(False, "The AI API call failed. Please retry.")
 
 
-def ask_image(api_key: str, model: str, png_bytes: bytes, prompt: str) -> Reply:
+def ask_image(api_key: str, model: str, image_bytes: bytes, prompt: str) -> Reply:
     """Single-turn question about one screenshot."""
-    return ask(api_key, model, [user_turn(png_bytes, prompt)])
+    return ask(api_key, model, [user_turn(image_bytes, prompt)])
+
+
+TextDeltaHandler = Callable[[str], None]
+
+
+def ask_streaming(
+    api_key: str,
+    model: str,
+    messages: Sequence[dict[str, Any]],
+    on_delta: TextDeltaHandler,
+) -> Reply:
+    """Stream a response, calling ``on_delta`` with each text chunk as it arrives.
+
+    Same shape and error handling as :func:`ask`, but the caller sees tokens
+    at first-token latency (usually 300-800 ms) instead of waiting for the
+    full message. The returned Reply carries the accumulated text so the
+    caller can archive / send it verbatim without maintaining its own buffer.
+
+    ``on_delta`` runs on the current thread as each chunk arrives; keep it
+    fast (``print(..., flush=True)`` is the intended use). On failure it is
+    not called — the error is returned as a non-ok Reply so the caller can
+    print the message itself. Zero-delta success (refusal, ``max_tokens``)
+    is also translated into a non-ok Reply just like :func:`ask`.
+    """
+    try:
+        import anthropic
+    except ImportError:
+        return Reply(False, "Missing dependency 'anthropic'. Install with: pip install screenrecon")
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+    except Exception as exc:
+        return Reply(False, translate_error(exc, [api_key]))
+
+    payload: dict[str, Any] = {
+        "model": model,
+        "max_tokens": MAX_TOKENS,
+        "messages": list(messages),
+    }
+    use_effort = model not in _effort_unsupported
+
+    for attempt in range(2):
+        request = dict(payload)
+        if use_effort:
+            request["output_config"] = {"effort": EFFORT}
+        chunks: list[str] = []
+        try:
+            with client.messages.stream(**request) as stream:
+                for chunk in stream.text_stream:
+                    chunks.append(chunk)
+                    on_delta(chunk)
+                final = stream.get_final_message()
+        except Exception as exc:
+            if use_effort and attempt == 0 and _is_parameter_error(exc):
+                # This model does not accept output_config.effort — retry
+                # without it. Any chunks already delivered are discarded on
+                # retry, which is fine because the retry re-streams the full
+                # answer from scratch.
+                _effort_unsupported.add(model)
+                use_effort = False
+                continue
+            return Reply(False, translate_error(exc, [api_key]))
+
+        text = "".join(chunks) or _extract_text(final)
+        if not text:
+            reason = getattr(final, "stop_reason", None)
+            if reason == "refusal":
+                return Reply(False, "The AI declined to answer this request (safety policy).")
+            if reason == "max_tokens":
+                return Reply(
+                    False,
+                    "The answer hit the output limit. Try a smaller region or a shorter prompt.",
+                )
+            return Reply(False, "The AI returned an empty answer. Please retry.")
+        return Reply(True, text)
+
+    return Reply(False, "The AI API call failed. Please retry.")
 
 
 def verify_key(api_key: str, model: str) -> tuple[bool, str]:

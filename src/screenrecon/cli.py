@@ -14,7 +14,16 @@ PROG = "screenrecon"
 EPILOG = """\
 examples:
   screenrecon                     watch the configured region
-  screenrecon --configure         interactive setup with a drag-to-select picker
+  screenrecon --configure         first-time interactive setup (drag-to-select picker)
+  screenrecon --show              print the current config (credentials masked)
+  screenrecon --screen            re-pick just the watched region
+  screenrecon --key               change just the Anthropic API key
+  screenrecon --model             change just the AI model
+  screenrecon --prompt            change just the default prompt
+  screenrecon --dwell             change just the dwell seconds
+  screenrecon --save-dir          change just the save directory
+  screenrecon --telegram          change just the Telegram bot token + chat ID
+  screenrecon --debug             watch and overlay a red outline on the region
   screenrecon --mode log          watch using the 'log' prompt preset
   screenrecon ask "what is this"  capture once and ask a single question
   screenrecon ask                 capture once and start an interactive Q&A
@@ -36,6 +45,47 @@ def build_parser() -> argparse.ArgumentParser:
         "--configure", action="store_true", help="run the interactive setup wizard"
     )
     parser.add_argument(
+        "--screen",
+        action="store_true",
+        help="re-pick just the watched region (all other config fields are left alone)",
+    )
+    parser.add_argument(
+        "--key",
+        action="store_true",
+        help="prompt for a new Anthropic API key only (all other config fields are left alone)",
+    )
+    parser.add_argument(
+        "--model",
+        action="store_true",
+        help="pick a new AI model only (all other config fields are left alone)",
+    )
+    parser.add_argument(
+        "--prompt",
+        action="store_true",
+        help="pick a new default prompt only (all other config fields are left alone)",
+    )
+    parser.add_argument(
+        "--dwell",
+        action="store_true",
+        help="set dwell seconds only (all other config fields are left alone)",
+    )
+    parser.add_argument(
+        "--save-dir",
+        dest="save_dir",
+        action="store_true",
+        help="set the save directory only (all other config fields are left alone)",
+    )
+    parser.add_argument(
+        "--telegram",
+        action="store_true",
+        help="prompt for Telegram bot token and chat ID only (all other fields are left alone)",
+    )
+    parser.add_argument(
+        "--show",
+        action="store_true",
+        help="print the current config (credentials masked) and exit",
+    )
+    parser.add_argument(
         "--mode",
         metavar="NAME",
         help="use the named prompt preset from the 'prompts' config section",
@@ -47,6 +97,11 @@ def build_parser() -> argparse.ArgumentParser:
         # A literal path, not the expanded one: --help output is routinely pasted
         # into bug reports and should not disclose the user's home directory.
         help="use an alternative config file (default: ~/.config/screenrecon/config.json)",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="show a persistent red outline around the watched region (watch mode only)",
     )
 
     subparsers = parser.add_subparsers(dest="command")
@@ -87,21 +142,6 @@ def _warn_about_redirected_endpoint() -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     _configure_stdio()
-    # Friendly hint for users still running the removed --show-cursor flag from an
-    # older version's muscle memory. argparse would print "unrecognized arguments",
-    # which is technically correct but tells the user nothing about what replaced it.
-    # --help and --version take precedence so the standard "always works" contract holds.
-    raw = list(sys.argv[1:] if argv is None else argv)
-    if "--show-cursor" in raw and not (
-        "--help" in raw or "-h" in raw or "--version" in raw
-    ):
-        print(
-            "screenrecon: --show-cursor was removed. "
-            "Run 'screenrecon --configure' — it now opens a drag-to-select picker.",
-            file=sys.stderr,
-        )
-        return 2
-
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -109,6 +149,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("the 'ask' subcommand cannot be combined with --configure")
     if args.mode and args.configure:
         parser.error("--mode only applies when watching or when using 'ask'")
+    setter_flags = [
+        name
+        for name in ("screen", "key", "model", "prompt", "dwell", "save_dir", "telegram")
+        if getattr(args, name)
+    ]
+    if len(setter_flags) > 1:
+        parser.error("the single-field setters are mutually exclusive; use them one at a time")
+    if setter_flags and (args.configure or args.command == "ask" or args.mode or args.debug):
+        parser.error(
+            f"--{setter_flags[0].replace('_', '-')} sets one config field; use it on its own"
+        )
+    if args.show and (
+        setter_flags
+        or args.configure
+        or args.command == "ask"
+        or args.mode
+        or args.debug
+    ):
+        parser.error("--show only prints the current config; use it on its own")
 
     # Imported lazily so that --help and --version never load mss/anthropic.
     from . import platform as cursor_platform
@@ -123,6 +182,22 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.configure:
             return config.run_wizard(args.config_path)
+        if args.screen:
+            return config.run_set_region(args.config_path)
+        if args.key:
+            return config.run_set_key(args.config_path)
+        if args.model:
+            return config.run_set_model(args.config_path)
+        if args.prompt:
+            return config.run_set_prompt(args.config_path)
+        if args.dwell:
+            return config.run_set_dwell(args.config_path)
+        if args.save_dir:
+            return config.run_set_save_dir(args.config_path)
+        if args.telegram:
+            return config.run_set_telegram(args.config_path)
+        if args.show:
+            return config.run_show(args.config_path)
 
         cfg = config.load(args.config_path)
         config.require_credentials(cfg)
@@ -136,7 +211,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             question = " ".join(args.question).strip() or (prompt if args.mode else None)
             return watcher.run_ask(cfg, question)
 
-        return watcher.run(cfg, prompt)
+        return watcher.run(cfg, prompt, debug=args.debug)
 
     except config.ConfigError as exc:
         ui.error(str(exc))

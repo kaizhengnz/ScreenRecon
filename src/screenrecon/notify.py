@@ -143,7 +143,7 @@ def _call(
     return False, _sanitize(f"Telegram error {code}: {description}", token, chat_id), None
 
 
-def send(bot_token: str, chat_id: str, png_bytes: bytes, text: str) -> bool:
+def send(bot_token: str, chat_id: str, image_bytes: bytes, text: str) -> bool:
     """Send the screenshot plus text. Returns whether everything succeeded."""
     caption, followup = split_caption(text)
 
@@ -152,7 +152,7 @@ def send(bot_token: str, chat_id: str, png_bytes: bytes, text: str) -> bool:
         "sendPhoto",
         chat_id=chat_id,
         data={"chat_id": chat_id, "caption": caption},
-        files={"photo": ("screenrecon.png", png_bytes, "image/png")},
+        files={"photo": ("screenrecon.jpg", image_bytes, "image/jpeg")},
     )
     if not photo_ok:
         ui.warn(f"Telegram photo delivery failed: {message}")

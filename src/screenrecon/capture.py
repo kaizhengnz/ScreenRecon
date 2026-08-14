@@ -159,13 +159,26 @@ def _translate_capture_error(exc: Exception) -> str:
     return f"Screen capture failed: {text}"
 
 
-def to_png_bytes(image: Any) -> bytes:
-    """Encode a ``PIL.Image`` as PNG bytes. Raises CaptureError on encode failure."""
+JPEG_QUALITY = 90
+"""JPEG quality for archive and API upload. 90 keeps UI screenshots visually
+lossless for OCR / description tasks while producing files roughly 5-10× smaller
+than the equivalent PNG. Not exposed as config — one quality for one use case."""
+
+
+def to_jpeg_bytes(image: Any, quality: int = JPEG_QUALITY) -> bytes:
+    """Encode a ``PIL.Image`` as JPEG bytes. Raises CaptureError on encode failure.
+
+    JPEG has no alpha channel and demands an RGB image; the ``convert`` guards a
+    grabber that returned RGBA (some mss backends do on transparent overlays).
+    ``optimize=True`` runs the extra Huffman pass — cheap on modern CPUs and
+    trims another few percent off the size.
+    """
     buffer = io.BytesIO()
     try:
-        image.save(buffer, format="PNG")
+        rgb = image if image.mode == "RGB" else image.convert("RGB")
+        rgb.save(buffer, format="JPEG", quality=quality, optimize=True)
     except Exception as exc:
-        raise CaptureError(f"Could not encode the capture as PNG: {exc}") from None
+        raise CaptureError(f"Could not encode the capture as JPEG: {exc}") from None
     return buffer.getvalue()
 
 

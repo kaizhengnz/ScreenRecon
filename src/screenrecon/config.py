@@ -474,7 +474,7 @@ def _run_wizard(
 
     ui.rule("ScreenRecon setup")
     ui.info(f"Config file: {resolved}")
-    ui.info("Press Enter to keep the current value. Press Ctrl+C at any time to abort — nothing is saved until every step is done.\n")
+    ui.info("Press Enter to keep the current value. Nothing is saved until every step is done.\n")
 
     ui.info("1) Watched region")
     cfg["region"] = _prompt_region(dict(cfg["region"]), picker_factory)

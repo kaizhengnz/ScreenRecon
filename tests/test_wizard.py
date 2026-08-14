@@ -252,7 +252,6 @@ def test_wizard_shows_centered_default_when_no_region_is_saved(
     out = capsys.readouterr().out
     assert f"left={expected['left']}" in out
     assert f"top={expected['top']}" in out
-    assert "Ctrl+C" in out  # abort hint shown up front
     assert "(on monitor 1 of 1)" in out  # Current line names the monitor
 
 

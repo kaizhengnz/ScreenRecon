@@ -289,47 +289,21 @@ MAX_PROMPT_RETRIES = 5
 
 
 def _read_secret(prompt: str) -> str:
-    """Read one secret line with no terminal echo, and — importantly — with paste
-    (Ctrl+V) working on Windows.
+    """Read one secret line.
 
-    Standard ``getpass.getpass`` on Windows uses ``msvcrt.getwch`` per-character,
-    and many terminals (Windows Terminal, some PowerShell setups) drop pasted
-    text on that path. We disable ``ENABLE_ECHO_INPUT`` on the console and read
-    a whole line with the normal line-buffered reader, which handles pasted
-    text natively; other platforms keep using the standard ``getpass``.
+    - **Non-Windows**: ``getpass.getpass``. Terminals honour termios line
+      editing, so paste works and characters stay hidden.
+    - **Windows**: plain ``input()``. Characters are visible as the user types
+      or pastes — a real UX regression vs. ``getpass``, but the alternatives
+      lose paste support (``msvcrt.getwch`` per-char) or leave the user
+      guessing whether their paste took effect. Callers still echo a masked
+      confirmation after Enter (``ui.mask``) so the terminal scrollback keeps
+      only ``sk-ant-a... (N chars)`` prefixes, and the wizard advises clearing
+      the terminal history before publishing screenshots of the setup.
     """
-    if sys.platform != "win32":
-        return getpass.getpass(prompt)
-
-    import ctypes
-    from ctypes import wintypes
-
-    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-    STD_INPUT_HANDLE = -10
-    ENABLE_ECHO_INPUT = 0x0004
-    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
-
-    handle = kernel32.GetStdHandle(STD_INPUT_HANDLE)
-    if handle in (0, INVALID_HANDLE_VALUE):
-        return getpass.getpass(prompt)
-    old_mode = wintypes.DWORD()
-    if not kernel32.GetConsoleMode(handle, ctypes.byref(old_mode)):
-        # stdin is redirected (piped, tests) — not a console, use the fallback.
-        return getpass.getpass(prompt)
-
-    kernel32.SetConsoleMode(handle, old_mode.value & ~ENABLE_ECHO_INPUT)
-    try:
-        sys.stdout.write(prompt)
-        sys.stdout.flush()
-        line = sys.stdin.readline()
-        # readline echoes nothing (echo is off); advance the cursor ourselves.
-        sys.stdout.write("\n")
-        sys.stdout.flush()
-        if not line:  # Ctrl+Z Enter → EOF
-            raise EOFError
-        return line.rstrip("\r\n")
-    finally:
-        kernel32.SetConsoleMode(handle, old_mode.value)
+    if sys.platform == "win32":
+        return input(prompt)
+    return getpass.getpass(prompt)
 
 
 def _ask(label: str, current: Any, *, secret: bool = False) -> str:
@@ -557,7 +531,15 @@ def _run_wizard(
         "default prompt", PROMPT_CHOICES, str(cfg["prompt"]), default=DEFAULT_PROMPT
     )
 
-    ui.info("\n5) Credentials (never echoed in full)")
+    ui.info("\n5) Credentials")
+    if sys.platform == "win32":
+        ui.info(
+            "   Characters are visible while typing/pasting on Windows so paste"
+            " works. Clear your terminal history after setup if you plan to"
+            " share screenshots or scrollback."
+        )
+    else:
+        ui.info("   Typed characters are hidden; paste works.")
     env_key = os.environ.get(ENV_API_KEY, "").strip()
     if env_key:
         ui.info(f"  {ENV_API_KEY} is set ({ui.mask(env_key)}); it wins over this file at runtime.")

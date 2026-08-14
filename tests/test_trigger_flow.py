@@ -32,12 +32,15 @@ def stubs(monkeypatch):
 
     monkeypatch.setattr(capture, "grab", lambda region: Image.new("RGB", (10, 10), (1, 2, 3)))
     monkeypatch.setattr(watcher.capture, "grab", capture.grab)
-    monkeypatch.setattr(
-        vision,
-        "ask_image",
-        lambda key, model, png, prompt: calls["vision"].append(prompt)
-        or vision.Reply(True, "the answer"),
-    )
+    def fake_stream(key, model, messages, on_delta):
+        # Record the prompt (last user text) so tests can assert on it.
+        for block in messages[-1]["content"]:
+            if block.get("type") == "text":
+                calls["vision"].append(block["text"])
+        on_delta("the answer")
+        return vision.Reply(True, "the answer")
+
+    monkeypatch.setattr(vision, "ask_streaming", fake_stream)
     monkeypatch.setattr(
         notify,
         "send",
@@ -65,7 +68,7 @@ def test_one_trigger_produces_all_four_outputs(cfg, stubs, capsys):
 
     files = archive_files(cfg)
     assert len(files) == 2
-    assert files[0].endswith(".png") and files[1].endswith(".txt")
+    assert files[0].endswith(".jpg") and files[1].endswith(".txt")
 
 
 # --------------------------------------------------------------------------- #
@@ -111,8 +114,8 @@ def test_missing_home_directory_does_not_stop_telegram(cfg, stubs, monkeypatch):
 
 
 def test_failed_screenshot_write_leaves_no_orphan_text(cfg, stubs, monkeypatch):
-    """The .txt is the companion of the .png; alone it is an orphan."""
-    monkeypatch.setattr(storage, "save_png", lambda directory, stem, data: None)
+    """The .txt is the companion of the .jpg; alone it is an orphan."""
+    monkeypatch.setattr(storage, "save_jpeg", lambda directory, stem, data: None)
     assert watcher.handle_trigger(cfg, "read this") is True
     assert archive_files(cfg) == []
 
@@ -127,7 +130,9 @@ def test_capture_failure_reports_and_returns_false(cfg, stubs, monkeypatch, caps
 
 def test_recognition_failure_is_still_archived_and_pushed(cfg, stubs, monkeypatch):
     monkeypatch.setattr(
-        vision, "ask_image", lambda *a, **k: vision.Reply(False, "Network connection failed.")
+        vision,
+        "ask_streaming",
+        lambda *a, **k: vision.Reply(False, "Network connection failed."),
     )
     assert watcher.handle_trigger(cfg, "read this") is False
     assert len(archive_files(cfg)) == 2

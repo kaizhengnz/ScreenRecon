@@ -67,15 +67,15 @@ def test_unknown_error_is_scrubbed_of_credentials():
 # --------------------------------------------------------------------------- #
 
 
-def test_image_block_is_base64_png():
-    block = vision.image_block(b"\x89PNG fake bytes")
+def test_image_block_is_base64_jpeg():
+    block = vision.image_block(b"\xff\xd8\xff fake jpeg bytes")
     assert block["type"] == "image"
-    assert block["source"]["media_type"] == "image/png"
+    assert block["source"]["media_type"] == "image/jpeg"
     assert isinstance(block["source"]["data"], str)
 
 
 def test_user_turn_puts_the_image_before_the_text():
-    turn = vision.user_turn(b"png", "what is this?")
+    turn = vision.user_turn(b"jpeg", "what is this?")
     assert turn["role"] == "user"
     assert [block["type"] for block in turn["content"]] == ["image", "text"]
 
@@ -102,8 +102,35 @@ class FakeMessage:
         self.stop_reason = stop_reason
 
 
+class FakeStream:
+    """Context-manager stand-in for `client.messages.stream(...)`."""
+
+    def __init__(self, chunks, final) -> None:
+        self._chunks = list(chunks)
+        self._final = final
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    @property
+    def text_stream(self):
+        return iter(self._chunks)
+
+    def get_final_message(self):
+        return self._final
+
+
 class FakeClient:
-    """Stands in for anthropic.Anthropic; records every request it receives."""
+    """Stands in for anthropic.Anthropic; records every request it receives.
+
+    Results shared between ``create()`` and ``stream()``: a FakeMessage acts as
+    a non-streaming response, a FakeStream (or a bare list of chunks) as a
+    streaming response, an Exception raises. The single queue keeps the
+    error-fallback tests uniform across both call shapes.
+    """
 
     def __init__(self, results) -> None:
         self.results = list(results)
@@ -111,6 +138,13 @@ class FakeClient:
         self.messages = self
 
     def create(self, **kwargs):
+        self.requests.append(kwargs)
+        result = self.results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    def stream(self, **kwargs):
         self.requests.append(kwargs)
         result = self.results.pop(0)
         if isinstance(result, Exception):
@@ -235,3 +269,55 @@ def test_ask_image_builds_a_single_user_turn(monkeypatch, model):
     messages = client.requests[0]["messages"]
     assert len(messages) == 1
     assert messages[0]["role"] == "user"
+
+
+# --------------------------------------------------------------------------- #
+# ask_streaming(): delivers text as it arrives, mirrors ask's error handling
+# --------------------------------------------------------------------------- #
+
+
+def test_ask_streaming_delivers_chunks_in_order_and_returns_the_full_text(monkeypatch):
+    stream = FakeStream(["Hel", "lo, ", "world"], FakeMessage([FakeBlock("text", "Hello, world")]))
+    install_fake_client(monkeypatch, FakeClient([stream]))
+    seen: list[str] = []
+    reply = vision.ask_streaming(API_KEY, "claude-opus-5", [], seen.append)
+    assert seen == ["Hel", "lo, ", "world"]
+    assert reply.ok is True
+    assert reply.text == "Hello, world"
+
+
+def test_ask_streaming_translates_transport_errors_instead_of_raising(monkeypatch):
+    install_fake_client(
+        monkeypatch, FakeClient([status_error(anthropic.AuthenticationError, 401)])
+    )
+    seen: list[str] = []
+    reply = vision.ask_streaming(API_KEY, "claude-opus-5", [], seen.append)
+    assert reply.ok is False
+    assert seen == []  # nothing streamed on failure
+    assert "--configure" in reply.text
+
+
+def test_ask_streaming_reports_refusals_and_max_tokens(monkeypatch):
+    """A zero-delta run with a stop_reason is a real error, not a success."""
+    install_fake_client(
+        monkeypatch,
+        FakeClient([FakeStream([], FakeMessage([], stop_reason="refusal"))]),
+    )
+    reply = vision.ask_streaming(API_KEY, "claude-opus-5", [], lambda _: None)
+    assert reply.ok is False
+    assert "declined" in reply.text
+
+
+def test_ask_streaming_falls_back_when_effort_is_unsupported(monkeypatch):
+    """Same probe-and-retry as ask(): drop output_config and stream a second time."""
+    monkeypatch.setattr(vision, "_effort_unsupported", set())
+    bad_request = status_error(
+        anthropic.BadRequestError, 400, "output_config.effort is not supported by this model"
+    )
+    good = FakeStream(["ok"], FakeMessage([FakeBlock("text", "ok")]))
+    client = install_fake_client(monkeypatch, FakeClient([bad_request, good]))
+
+    reply = vision.ask_streaming(API_KEY, "claude-haiku-4-5", [], lambda _: None)
+    assert reply.ok is True
+    assert "output_config" in client.requests[0]
+    assert "output_config" not in client.requests[1]

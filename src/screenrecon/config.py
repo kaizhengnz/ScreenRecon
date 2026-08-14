@@ -550,6 +550,81 @@ def run_set_region(
     return 0
 
 
+def _run_single_field_setter(
+    path: str | os.PathLike[str] | None,
+    banner: str,
+    setter: Callable[[dict[str, Any]], None],
+) -> int:
+    """Shared skeleton for ``--key`` / ``--model``: load, mutate one field, save.
+
+    Refuses to run without an existing config so credentials are always set
+    via ``--configure`` first — mirrors ``run_set_region``. ``setter`` mutates
+    the raw dict in place; on ``WizardAborted`` / ``KeyboardInterrupt`` the
+    file is left untouched.
+    """
+    resolved = config_path(path)
+    raw = read_raw(resolved)
+    if not raw:
+        ui.error(
+            f"No config to update at {resolved}. "
+            "Run 'screenrecon --configure' first to set credentials and save directory."
+        )
+        return 1
+
+    ui.rule(banner)
+    ui.info(f"Config file: {resolved}")
+    try:
+        setter(raw)
+    except WizardAborted as exc:
+        ui.error(str(exc))
+        ui.error("Nothing was saved.")
+        return 1
+    except KeyboardInterrupt:
+        print()
+        ui.info("Cancelled. Nothing was saved.")
+        return 130
+
+    try:
+        validate_config(merge_defaults(raw))
+    except ConfigError as exc:
+        ui.error(str(exc))
+        return 1
+
+    try:
+        saved_to = save(raw, resolved)
+    except ConfigError as exc:
+        ui.error(str(exc))
+        return 1
+    ui.rule()
+    ui.info(f"Saved to {saved_to}")
+    return 0
+
+
+def run_set_key(path: str | os.PathLike[str] | None = None) -> int:
+    """Prompt for a new Anthropic API key and save it; leave every other field alone."""
+    def setter(raw: dict[str, Any]) -> None:
+        env_key = os.environ.get(ENV_API_KEY, "").strip()
+        if env_key:
+            ui.info(
+                f"  {ENV_API_KEY} is set ({ui.mask(env_key)}); it wins over this file at runtime."
+            )
+        current = raw.get("anthropic_api_key", DEFAULTS["anthropic_api_key"])
+        raw["anthropic_api_key"] = _ask("  Anthropic API key", current, secret=True)
+
+    return _run_single_field_setter(path, "ScreenRecon set API key", setter)
+
+
+def run_set_model(path: str | os.PathLike[str] | None = None) -> int:
+    """Pick a new AI model and save it; leave every other field alone."""
+    def setter(raw: dict[str, Any]) -> None:
+        current = str(raw.get("model", DEFAULT_MODEL))
+        raw["model"] = _ask_choice(
+            "AI model", MODEL_CHOICES, current, default=DEFAULT_MODEL
+        )
+
+    return _run_single_field_setter(path, "ScreenRecon set model", setter)
+
+
 def _run_wizard(
     path: str | os.PathLike[str] | None = None,
     picker_factory: PickerFactory | None = None,

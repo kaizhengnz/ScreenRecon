@@ -502,6 +502,78 @@ def test_set_region_records_the_monitor(tmp_path, monkeypatch):
     assert saved["monitor"] == {"index": 2, "of": 2}
 
 
+def test_set_key_updates_only_the_key(tmp_path, monkeypatch, answers):
+    scripted, _ = answers
+    path = tmp_path / "config.json"
+    original = {
+        "region": {"left": 50, "top": 60, "width": 400, "height": 300},
+        "anthropic_api_key": "old-key",
+        "telegram_bot_token": "old-token",
+        "telegram_chat_id": "old-chat",
+        "save_dir": str(tmp_path),
+        "prompt": "keep me",
+        "prompts": {"log": "find errors"},
+        "dwell_seconds": 2.5,
+        "model": "claude-opus-5",
+    }
+    path.write_text(json.dumps(original), encoding="utf-8")
+    monkeypatch.delenv(config.ENV_API_KEY, raising=False)
+    scripted.append("sk-ant-new-key-value")
+
+    assert config.run_set_key(path) == 0
+
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["anthropic_api_key"] == "sk-ant-new-key-value"
+    for key, value in original.items():
+        if key == "anthropic_api_key":
+            continue
+        assert saved[key] == value
+
+
+def test_set_key_refuses_when_no_config_exists(tmp_path, capsys):
+    path = tmp_path / "config.json"  # does not exist
+    assert config.run_set_key(path) == 1
+    err = capsys.readouterr().err
+    assert "--configure" in err
+    assert not path.exists()
+
+
+def test_set_model_updates_only_the_model(tmp_path, answers):
+    scripted, _ = answers
+    path = tmp_path / "config.json"
+    original = {
+        "region": {"left": 50, "top": 60, "width": 400, "height": 300},
+        "anthropic_api_key": "old-key",
+        "telegram_bot_token": "old-token",
+        "telegram_chat_id": "old-chat",
+        "save_dir": str(tmp_path),
+        "prompt": "keep me",
+        "prompts": {},
+        "dwell_seconds": 2.5,
+        "model": "claude-opus-5",
+    }
+    path.write_text(json.dumps(original), encoding="utf-8")
+    # Pick preset 2 (claude-haiku-4-5, per MODEL_CHOICES order).
+    scripted.append("2")
+
+    assert config.run_set_model(path) == 0
+
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["model"] == "claude-haiku-4-5"
+    for key, value in original.items():
+        if key == "model":
+            continue
+        assert saved[key] == value
+
+
+def test_set_model_refuses_when_no_config_exists(tmp_path, capsys):
+    path = tmp_path / "config.json"  # does not exist
+    assert config.run_set_model(path) == 1
+    err = capsys.readouterr().err
+    assert "--configure" in err
+    assert not path.exists()
+
+
 def test_set_region_clears_a_stale_monitor_when_enumeration_fails(tmp_path, monkeypatch):
     """A previously-stored monitor annotation must not linger when we cannot
     recompute — leaving stale info would defeat the whole point of storing it."""

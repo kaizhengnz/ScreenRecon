@@ -41,6 +41,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="re-pick just the watched region (all other config fields are left alone)",
     )
     parser.add_argument(
+        "--key",
+        action="store_true",
+        help="prompt for a new Anthropic API key only (all other config fields are left alone)",
+    )
+    parser.add_argument(
+        "--model",
+        action="store_true",
+        help="pick a new AI model only (all other config fields are left alone)",
+    )
+    parser.add_argument(
         "--mode",
         metavar="NAME",
         help="use the named prompt preset from the 'prompts' config section",
@@ -104,8 +114,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("the 'ask' subcommand cannot be combined with --configure")
     if args.mode and args.configure:
         parser.error("--mode only applies when watching or when using 'ask'")
-    if args.screen and (args.configure or args.command == "ask" or args.mode or args.debug):
-        parser.error("--screen sets only the watched region; use it on its own")
+    setter_flags = [name for name in ("screen", "key", "model") if getattr(args, name)]
+    if len(setter_flags) > 1:
+        parser.error(
+            "--screen / --key / --model each set one field; use them one at a time"
+        )
+    if setter_flags and (args.configure or args.command == "ask" or args.mode or args.debug):
+        parser.error(
+            f"--{setter_flags[0]} sets one config field; use it on its own"
+        )
 
     # Imported lazily so that --help and --version never load mss/anthropic.
     from . import platform as cursor_platform
@@ -122,6 +139,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return config.run_wizard(args.config_path)
         if args.screen:
             return config.run_set_region(args.config_path)
+        if args.key:
+            return config.run_set_key(args.config_path)
+        if args.model:
+            return config.run_set_model(args.config_path)
 
         cfg = config.load(args.config_path)
         config.require_credentials(cfg)

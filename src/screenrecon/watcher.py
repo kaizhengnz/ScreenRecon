@@ -129,17 +129,18 @@ def print_destinations(cfg: Mapping[str, Any]) -> None:
 
 
 def _encode(image: Any) -> tuple[bytes, bytes]:
-    """Return (png to archive, png to upload).
+    """Return (JPEG to archive, JPEG to upload).
 
-    The archive keeps full resolution; only the uploaded copy is downscaled, and
-    only when it exceeds what the vision models accept. When no downscaling is
-    needed both are the same bytes, so the common case encodes once.
+    The archive keeps full resolution; only the uploaded copy is downscaled,
+    and only when it exceeds what the vision models accept. When no
+    downscaling is needed both are the same bytes, so the common case encodes
+    once.
     """
     api_image = capture.downscale_for_api(image)
-    archive_png = capture.to_png_bytes(image)
+    archive_jpeg = capture.to_jpeg_bytes(image)
     if api_image is image:
-        return archive_png, archive_png
-    return archive_png, capture.to_png_bytes(api_image)
+        return archive_jpeg, archive_jpeg
+    return archive_jpeg, capture.to_jpeg_bytes(api_image)
 
 
 def handle_trigger(cfg: Mapping[str, Any], prompt: str) -> bool:
@@ -152,41 +153,48 @@ def handle_trigger(cfg: Mapping[str, Any], prompt: str) -> bool:
     try:
         image = capture.grab(cfg["region"])
         _warn_if_blank(image)
-        archive_png, api_png = _encode(image)
+        archive_jpeg, api_jpeg = _encode(image)
     except capture.CaptureError as exc:
         ui.error(str(exc))
         return False
 
     directory = None
     stem = ""
-    saved_png = None
+    saved_image = None
     try:
         directory = storage.resolve_dir(str(cfg["save_dir"]))
         stem = storage.new_stem(directory)
-        saved_png = storage.save_png(directory, stem, archive_png)
+        saved_image = storage.save_jpeg(directory, stem, archive_jpeg)
     except (OSError, RuntimeError) as exc:
         # RuntimeError: Path.expanduser() when the platform reports no home dir.
         ui.warn(f"Save directory unusable ({cfg['save_dir']}): {exc}")
 
     local_ms = (time.monotonic() - local_start) * 1000
 
+    ui.rule(time.strftime("%H:%M:%S"))
     api_start = time.monotonic()
-    reply = vision.ask_image(
-        str(cfg["anthropic_api_key"]), str(cfg["model"]), api_png, prompt
+    reply = vision.ask_streaming(
+        str(cfg["anthropic_api_key"]),
+        str(cfg["model"]),
+        [vision.user_turn(api_jpeg, prompt)],
+        lambda chunk: print(chunk, end="", flush=True),
     )
     api_seconds = time.monotonic() - api_start
-
-    text = reply.text if reply.ok else f"(recognition failed) {reply.text}"
-    ui.rule(time.strftime("%H:%M:%S"))
-    ui.info(text)
+    if reply.ok:
+        # End the line the model was streaming into; ui.info takes over from here.
+        print(flush=True)
+        text = reply.text
+    else:
+        text = f"(recognition failed) {reply.text}"
+        ui.info(text)
     ui.info(f"\n(local {local_ms:.0f} ms, API {api_seconds:.1f} s)")
 
-    # The .txt is the companion of the .png; without the image it is an orphan.
-    if saved_png is not None and directory is not None and stem:
+    # The .txt is the companion of the .jpg; without the image it is an orphan.
+    if saved_image is not None and directory is not None and stem:
         storage.save_txt(directory, stem, text)
 
     notify.send(
-        str(cfg["telegram_bot_token"]), str(cfg["telegram_chat_id"]), api_png, text
+        str(cfg["telegram_bot_token"]), str(cfg["telegram_chat_id"]), api_jpeg, text
     )
     return reply.ok
 
@@ -297,20 +305,20 @@ def run_ask(cfg: Mapping[str, Any], question: str | None) -> int:
     try:
         image = capture.grab(cfg["region"])
         _warn_if_blank(image)
-        archive_png, api_png = _encode(image)
+        archive_jpeg, api_jpeg = _encode(image)
     except capture.CaptureError as exc:
         ui.error(str(exc))
         return 1
 
     directory = None
     stem = ""
-    saved_png = None
+    saved_image = None
     try:
         directory = storage.resolve_dir(str(cfg["save_dir"]))
         stem = storage.new_stem(directory)
-        saved_png = storage.save_png(directory, stem, archive_png)
-        if saved_png is not None:
-            ui.info(f"Captured and saved to {saved_png}")
+        saved_image = storage.save_jpeg(directory, stem, archive_jpeg)
+        if saved_image is not None:
+            ui.info(f"Captured and saved to {saved_image}")
     except (OSError, RuntimeError) as exc:
         ui.warn(f"Save directory unusable ({cfg['save_dir']}): {exc}")
 
@@ -335,13 +343,15 @@ def run_ask(cfg: Mapping[str, Any], question: str | None) -> int:
             if not current:
                 break
 
-        messages.append(vision.user_turn(api_png if first else None, current))
+        messages.append(vision.user_turn(api_jpeg if first else None, current))
         first = False
-        reply = vision.ask(api_key, model, messages)
-
+        ui.rule("Answer")
+        reply = vision.ask_streaming(
+            api_key, model, messages,
+            lambda chunk: print(chunk, end="", flush=True),
+        )
         if reply.ok:
-            ui.rule("Answer")
-            ui.info(reply.text)
+            print(flush=True)  # end the streamed line
             transcript.append(f"Q: {current}\nA: {reply.text}")
         else:
             ui.error(reply.text)
@@ -352,6 +362,6 @@ def run_ask(cfg: Mapping[str, Any], question: str | None) -> int:
             break
         messages.append({"role": "assistant", "content": [{"type": "text", "text": reply.text}]})
 
-    if transcript and saved_png is not None and directory is not None and stem:
+    if transcript and saved_image is not None and directory is not None and stem:
         storage.save_txt(directory, stem, "\n\n".join(transcript))
     return 1 if failed else 0

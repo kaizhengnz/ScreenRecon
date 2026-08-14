@@ -62,6 +62,8 @@ cursor there will never re-trigger.
 | `screenrecon` | Watch the configured region |
 | `screenrecon --configure` | Interactive setup: drag-to-select region picker, then credentials (verified online) |
 | `screenrecon --screen` | Re-pick just the watched region; every other config field is left alone |
+| `screenrecon --key` | Prompt for a new Anthropic API key only; every other config field is left alone |
+| `screenrecon --model` | Pick a new AI model only; every other config field is left alone |
 | `screenrecon --mode NAME` | Watch using the `prompts.NAME` preset instead of the default prompt |
 | `screenrecon ask "question"` | Capture once, answer one question, exit |
 | `screenrecon ask` | Capture once, then keep asking questions about that screenshot |
@@ -126,7 +128,7 @@ whether both values are right.
 Each trigger writes two files into `save_dir`:
 
 ```
-20260812_143052.png    the captured region
+20260812_143052.jpg    the captured region (JPEG, quality 90)
 20260812_143052.txt    the recognised text (UTF-8)
 ```
 

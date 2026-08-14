@@ -47,6 +47,8 @@ def calls(monkeypatch):
     monkeypatch.setattr(watcher, "run_ask", lambda cfg, question: record("ask", question))
     monkeypatch.setattr(config, "run_wizard", lambda path: record("wizard", path))
     monkeypatch.setattr(config, "run_set_region", lambda path: record("set_region", path))
+    monkeypatch.setattr(config, "run_set_key", lambda path: record("set_key", path))
+    monkeypatch.setattr(config, "run_set_model", lambda path: record("set_model", path))
     return recorded
 
 
@@ -82,6 +84,18 @@ def test_screen_re_picks_only_the_region(config_file, calls):
     assert "watch" not in calls
 
 
+def test_key_sets_only_the_api_key(config_file, calls):
+    assert cli.main(["--config", config_file, "--key"]) == 0
+    assert calls["set_key"] == config_file
+    assert "watch" not in calls
+
+
+def test_model_sets_only_the_model(config_file, calls):
+    assert cli.main(["--config", config_file, "--model"]) == 0
+    assert calls["set_model"] == config_file
+    assert "watch" not in calls
+
+
 def test_ask_passes_the_joined_question(config_file, calls):
     assert cli.main(["--config", config_file, "ask", "what", "is", "this"]) == 0
     assert calls["ask"] == "what is this"
@@ -111,6 +125,11 @@ def test_ask_with_a_mode_uses_the_preset_as_the_question(config_file, calls):
         ["--screen", "--debug"],
         ["--screen", "--mode", "log"],
         ["--screen", "ask", "q"],
+        ["--key", "--configure"],
+        ["--model", "--debug"],
+        ["--screen", "--key"],
+        ["--screen", "--model"],
+        ["--key", "--model"],
     ],
 )
 def test_conflicting_flags_exit_two(argv):

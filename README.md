@@ -119,6 +119,14 @@ Prompt presets are added by editing the file — the wizard does not ask for the
 
 `ANTHROPIC_API_KEY` in your environment overrides the key in the config file.
 
+### Getting an Anthropic API key
+
+1. Sign up or log in at [console.anthropic.com](https://console.anthropic.com/).
+2. Go to **Settings → API Keys → Create Key**, give it a name like `screenrecon`, and copy the key that appears (it starts with `sk-ant-...`). Anthropic will only show the full key once.
+3. Add billing credit under **Settings → Billing** — vision calls need a paid balance, the free tier is not enough for continuous use.
+
+Create a dedicated key rather than reusing an existing one: you can then revoke or replace it independently, and account-level usage reports make it easy to see what the tool cost you.
+
 ### Getting a Telegram bot token and chat ID
 
 1. Message [@BotFather](https://t.me/BotFather), send `/newbot`, and copy the token it gives you.

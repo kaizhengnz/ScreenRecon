@@ -5,6 +5,7 @@ from __future__ import annotations
 import getpass
 import json
 import os
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -287,11 +288,56 @@ MAX_PROMPT_RETRIES = 5
 """Give up after this many unusable answers, rather than looping forever."""
 
 
+def _read_secret(prompt: str) -> str:
+    """Read one secret line with no terminal echo, and — importantly — with paste
+    (Ctrl+V) working on Windows.
+
+    Standard ``getpass.getpass`` on Windows uses ``msvcrt.getwch`` per-character,
+    and many terminals (Windows Terminal, some PowerShell setups) drop pasted
+    text on that path. We disable ``ENABLE_ECHO_INPUT`` on the console and read
+    a whole line with the normal line-buffered reader, which handles pasted
+    text natively; other platforms keep using the standard ``getpass``.
+    """
+    if sys.platform != "win32":
+        return getpass.getpass(prompt)
+
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    STD_INPUT_HANDLE = -10
+    ENABLE_ECHO_INPUT = 0x0004
+    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+    handle = kernel32.GetStdHandle(STD_INPUT_HANDLE)
+    if handle in (0, INVALID_HANDLE_VALUE):
+        return getpass.getpass(prompt)
+    old_mode = wintypes.DWORD()
+    if not kernel32.GetConsoleMode(handle, ctypes.byref(old_mode)):
+        # stdin is redirected (piped, tests) — not a console, use the fallback.
+        return getpass.getpass(prompt)
+
+    kernel32.SetConsoleMode(handle, old_mode.value & ~ENABLE_ECHO_INPUT)
+    try:
+        sys.stdout.write(prompt)
+        sys.stdout.flush()
+        line = sys.stdin.readline()
+        # readline echoes nothing (echo is off); advance the cursor ourselves.
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        if not line:  # Ctrl+Z Enter → EOF
+            raise EOFError
+        return line.rstrip("\r\n")
+    finally:
+        kernel32.SetConsoleMode(handle, old_mode.value)
+
+
 def _ask(label: str, current: Any, *, secret: bool = False) -> str:
     """Prompt for one value. Enter keeps the current value.
 
-    Secrets are read with getpass so the typed value is never echoed to the
-    terminal, never reaches shell/readline history, and cannot be captured from
+    Secrets are read through :func:`_read_secret` (no terminal echo, paste-
+    capable on Windows), so the typed value is never echoed to the terminal,
+    never reaches shell/readline history, and cannot be captured from
     scrollback — or by ScreenRecon's own screenshots (NFR-3).
     """
     has_current = current is not None and str(current) != ""
@@ -304,7 +350,7 @@ def _ask(label: str, current: Any, *, secret: bool = False) -> str:
 
     prompt = f"{label} [{hint}]: "
     try:
-        answer = (getpass.getpass(prompt) if secret else input(prompt)).strip()
+        answer = (_read_secret(prompt) if secret else input(prompt)).strip()
     except EOFError:
         raise WizardAborted(
             "No input available (stdin is closed). Run 'screenrecon --configure' "

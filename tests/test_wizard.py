@@ -96,6 +96,75 @@ def test_repeated_invalid_answers_give_up(answers):
         config._ask_int("region width", 600)
 
 
+def test_choice_picks_a_preset_by_number(answers):
+    """Numbered input `2` returns the second preset's value."""
+    scripted, _ = answers
+    scripted.append("2")
+    assert (
+        config._ask_choice("AI model", config.MODEL_CHOICES, "claude-opus-5")
+        == "claude-haiku-4-5"
+    )
+
+
+def test_choice_enter_keeps_current_via_last_index(answers):
+    """Enter defaults to index N+1 (current), so the current value survives."""
+    scripted, _ = answers
+    scripted.append("")
+    assert (
+        config._ask_choice("AI model", config.MODEL_CHOICES, "claude-sonnet-5-preview")
+        == "claude-sonnet-5-preview"
+    )
+
+
+def test_choice_typed_text_becomes_a_custom_value(answers):
+    """Non-numeric input passes through so future models work without a code change."""
+    scripted, _ = answers
+    scripted.append("claude-brand-new-model")
+    assert (
+        config._ask_choice("AI model", config.MODEL_CHOICES, "claude-opus-5")
+        == "claude-brand-new-model"
+    )
+
+
+def test_choice_out_of_range_number_retries(answers):
+    """A number outside 1..N+1 warns and re-prompts rather than accepting it."""
+    scripted, _ = answers
+    scripted.extend(["9", "0", "2"])
+    assert (
+        config._ask_choice("AI model", config.MODEL_CHOICES, "claude-opus-5")
+        == "claude-haiku-4-5"
+    )
+
+
+def test_choice_gives_up_after_repeated_invalid_answers(answers):
+    scripted, _ = answers
+    scripted.extend(["9"] * (config.MAX_PROMPT_RETRIES + 2))
+    with pytest.raises(config.WizardAborted):
+        config._ask_choice("AI model", config.MODEL_CHOICES, "claude-opus-5")
+
+
+def test_prompt_choice_by_number_returns_the_prompt_text(answers):
+    """Prompt presets store a short label and a full prompt string; picking 1
+    returns the full text, not the label.
+    """
+    scripted, _ = answers
+    scripted.append("1")
+    result = config._ask_choice(
+        "default prompt", config.PROMPT_CHOICES, "old current prompt"
+    )
+    assert result == config.PROMPT_CHOICES[0][1]
+    assert result != config.PROMPT_CHOICES[0][0]  # not the label
+
+
+def test_prompt_choice_enter_keeps_current(answers):
+    scripted, _ = answers
+    scripted.append("")
+    assert (
+        config._ask_choice("default prompt", config.PROMPT_CHOICES, "my custom prompt")
+        == "my custom prompt"
+    )
+
+
 def test_minimum_is_enforced(answers):
     scripted, _ = answers
     scripted.extend(["0", "-5", "800"])
@@ -183,6 +252,8 @@ def test_wizard_shows_centered_default_when_no_region_is_saved(
     out = capsys.readouterr().out
     assert f"left={expected['left']}" in out
     assert f"top={expected['top']}" in out
+    assert "Ctrl+C" in out  # abort hint shown up front
+    assert "(on monitor 1 of 1)" in out  # Current line names the monitor
 
 
 def test_wizard_keeps_current_region_when_user_declines_the_picker(

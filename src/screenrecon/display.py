@@ -80,6 +80,40 @@ def find_monitor_index_containing(
     return None
 
 
+def describe_region_monitor(
+    region: dict[str, int], monitors: list[dict[str, int]] | None = None
+) -> str:
+    """Return ``" (on monitor N of M)"`` when the region's centre lies on a
+    known monitor, or the empty string otherwise.
+
+    Empty covers: headless / no display, a stale region left over from an
+    unplugged monitor, the centre falling in the gap between monitors, and any
+    ``region`` dict that is missing the four coordinate keys. Callers append
+    the result verbatim to a coordinate line — no formatting needed on the
+    caller side.
+    """
+    left = region.get("left")
+    top = region.get("top")
+    width = region.get("width")
+    height = region.get("height")
+    if not all(isinstance(v, int) for v in (left, top, width, height)):
+        return ""
+    if monitors is None:
+        try:
+            monitors = enumerate_monitors()
+        except Exception:
+            return ""
+    if not monitors:
+        return ""
+    cx = left + width // 2  # type: ignore[operator]
+    cy = top + height // 2  # type: ignore[operator]
+    found = find_monitor_index_containing(cx, cy, monitors)
+    if found is None:
+        return ""
+    index, _ = found
+    return f" (on monitor {index} of {len(monitors)})"
+
+
 def find_monitor_containing(
     x: int, y: int, monitors: list[dict[str, int]] | None = None
 ) -> dict[str, int] | None:

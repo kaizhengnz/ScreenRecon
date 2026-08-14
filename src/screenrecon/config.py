@@ -43,6 +43,34 @@ DEFAULT_PROMPT = (
 DEFAULT_MODEL = "claude-opus-5"
 DEFAULT_SAVE_DIR = "~/ScreenRecon"
 
+MODEL_CHOICES: list[tuple[str, str, str]] = [
+    ("claude-opus-5", "claude-opus-5", "default, high accuracy"),
+    ("claude-haiku-4-5", "claude-haiku-4-5", "cheaper, faster"),
+]
+"""Built-in model choices for the wizard: ``(display_label, stored_value, note)``.
+
+For models the label equals the value (the model ID is short and readable), so
+the list looks a bit redundant. The three-tuple shape is the same one
+:data:`PROMPT_CHOICES` uses, where the label and the value differ.
+
+The wizard tacks the current value on as the final numbered option (index
+``len(MODEL_CHOICES) + 1``) so pressing Enter always maps to "keep current".
+"""
+
+PROMPT_CHOICES: list[tuple[str, str, str]] = [
+    (
+        "describe",
+        "Describe what is in this screenshot. Be concise and lead with the key information.",
+        "recognition or OCR",
+    ),
+    (
+        "answer",
+        "Read the question in this screenshot and answer it.",
+        "answer questions in the image",
+    ),
+]
+"""Built-in prompt presets. Same ``(label, value, note)`` shape as :data:`MODEL_CHOICES`."""
+
 ENV_API_KEY = "ANTHROPIC_API_KEY"
 
 DEFAULTS: dict[str, Any] = {
@@ -318,6 +346,56 @@ def _ask_float(label: str, current: Any, *, minimum: float | None = None) -> flo
     raise WizardAborted(f"{label}: too many invalid answers, giving up.")
 
 
+def _ask_choice(
+    label: str,
+    presets: list[tuple[str, str, str]],
+    current: str,
+) -> str:
+    """Present ``presets`` as numbered options 1..N, with ``current`` as option N+1.
+
+    Each preset is ``(label, value, note)``: the label is what the user sees in
+    the numbered list, the value is what is stored / returned, the note goes in
+    parentheses next to the label. For a model whose ID is short and readable
+    the label equals the value; for a prompt whose text is long the label is a
+    short synonym (e.g. ``"describe"`` for a full sentence prompt).
+
+    Behaviour:
+
+    - Input a number in ``1..N+1`` → returns that option's value.
+    - Input any non-empty non-numeric text → returned as a custom value (so
+      users can pin a value the wizard does not know about yet).
+    - Enter → keeps ``current`` (the prompt hint is ``[N+1]``; empty answer
+      resolves to that index and therefore to the current value).
+
+    Number out of range warns and re-prompts, up to ``MAX_PROMPT_RETRIES``.
+    """
+    current_index = len(presets) + 1
+    labels = [preset_label for preset_label, _, _ in presets]
+    width = max(len(preset_label) for preset_label in labels) if labels else 0
+    current_preview = current if len(current) <= 60 else current[:57] + "..."
+
+    ui.info(f"  {label}:")
+    for index, (preset_label, _, note) in enumerate(presets, start=1):
+        ui.info(f"    {index}) {preset_label:<{width}}  ({note})")
+    ui.info(f"    {current_index}) (keep current — {current_preview})")
+
+    for _ in range(MAX_PROMPT_RETRIES):
+        answer = _ask(
+            f"    Enter 1-{current_index} or type any {label}",
+            str(current_index),
+        ).strip()
+        if answer.isdigit():
+            number = int(answer)
+            if 1 <= number <= len(presets):
+                return presets[number - 1][1]
+            if number == current_index:
+                return current
+            ui.warn(f"    Choice must be 1-{current_index}, please try again.")
+            continue
+        return answer  # custom value
+    raise WizardAborted(f"{label}: too many invalid answers, giving up.")
+
+
 def _prompt_region(
     current: dict[str, Any],
     picker_factory: PickerFactory | None,
@@ -327,11 +405,12 @@ def _prompt_region(
     Kept intentionally thin — the picker owns the whole "give me a region"
     concern (open, cancel-fallback, PickerError-fallback, monitor reporting).
     """
-    from . import picker as picker_module
+    from . import display, picker as picker_module
 
     ui.info(
         f"   Current: left={current.get('left')} top={current.get('top')} "
         f"width={current.get('width')} height={current.get('height')}"
+        + display.describe_region_monitor(current)
     )
     answer = _ask("   Update this region? [Y/n]", "Y").strip().lower()
     if answer in ("n", "no"):
@@ -396,17 +475,27 @@ def _run_wizard(
 
     ui.rule("ScreenRecon setup")
     ui.info(f"Config file: {resolved}")
-    ui.info("Press Enter to keep the current value.\n")
+    ui.info("Press Enter to keep the current value. Press Ctrl+C at any time to abort — nothing is saved until every step is done.\n")
 
     ui.info("1) Watched region")
     cfg["region"] = _prompt_region(dict(cfg["region"]), picker_factory)
 
-    ui.info("\n2) Trigger and model")
+    ui.info("\n2) Trigger")
+    ui.info(
+        "   A capture fires when the cursor stays in the region for this many"
+        " seconds.\n"
+        "   After a capture, the cursor must leave and re-enter the region to"
+        " arm the next one."
+    )
     cfg["dwell_seconds"] = _ask_float("  dwell seconds", cfg["dwell_seconds"], minimum=0)
-    cfg["model"] = _ask("  AI model", cfg["model"])
-    cfg["prompt"] = _ask("  default prompt", cfg["prompt"])
 
-    ui.info("\n3) Credentials (never echoed in full)")
+    ui.info("\n3) AI model")
+    cfg["model"] = _ask_choice("AI model", MODEL_CHOICES, str(cfg["model"]))
+
+    ui.info("\n4) Default prompt")
+    cfg["prompt"] = _ask_choice("default prompt", PROMPT_CHOICES, str(cfg["prompt"]))
+
+    ui.info("\n5) Credentials (never echoed in full)")
     env_key = os.environ.get(ENV_API_KEY, "").strip()
     if env_key:
         ui.info(f"  {ENV_API_KEY} is set ({ui.mask(env_key)}); it wins over this file at runtime.")
@@ -414,7 +503,7 @@ def _run_wizard(
     cfg["telegram_bot_token"] = _ask("  Telegram bot token", cfg["telegram_bot_token"], secret=True)
     cfg["telegram_chat_id"] = _ask("  Telegram chat ID", cfg["telegram_chat_id"], secret=True)
 
-    ui.info("\n4) Local archive")
+    ui.info("\n6) Local archive")
     cfg["save_dir"] = _ask("  save directory", cfg["save_dir"])
 
     ui.rule("Verifying credentials")

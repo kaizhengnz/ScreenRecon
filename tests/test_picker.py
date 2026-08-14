@@ -64,6 +64,45 @@ def test_default_region_falls_back_to_first_monitor_when_cursor_is_off_screen(mo
     assert region["top"] == (1080 - picker.DEFAULT_HEIGHT) // 2
 
 
+def test_describe_region_monitor_names_the_containing_monitor(monkeypatch):
+    from screenrecon import display
+
+    monitors = [
+        {"left": 0, "top": 0, "width": 1920, "height": 1080},
+        {"left": 1920, "top": 0, "width": 1600, "height": 900},
+    ]
+    monkeypatch.setattr("screenrecon.display.enumerate_monitors", lambda: monitors)
+    # Region centred on the second monitor.
+    result = display.describe_region_monitor(
+        {"left": 2200, "top": 200, "width": 400, "height": 300}
+    )
+    assert result == " (on monitor 2 of 2)"
+
+
+def test_describe_region_monitor_is_empty_when_off_screen(monkeypatch):
+    from screenrecon import display
+
+    monitors = [{"left": 0, "top": 0, "width": 100, "height": 100}]
+    monkeypatch.setattr("screenrecon.display.enumerate_monitors", lambda: monitors)
+    assert (
+        display.describe_region_monitor(
+            {"left": 500, "top": 500, "width": 10, "height": 10}
+        )
+        == ""
+    )
+
+
+def test_describe_region_monitor_is_empty_when_region_is_incomplete(monkeypatch):
+    """A region missing keys must not raise — the annotation is skipped instead."""
+    from screenrecon import display
+
+    monkeypatch.setattr(
+        "screenrecon.display.enumerate_monitors",
+        lambda: [{"left": 0, "top": 0, "width": 100, "height": 100}],
+    )
+    assert display.describe_region_monitor({"left": 5}) == ""
+
+
 def test_default_region_falls_back_to_cursor_when_no_monitors_are_known(monkeypatch):
     """Extremely defensive — headless CI or a mss quirk. Region still valid."""
     monkeypatch.setattr("screenrecon.display.enumerate_monitors", lambda: [])

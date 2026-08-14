@@ -400,6 +400,25 @@ never reaches the terminal, shell history, or a screenshot ScreenRecon itself
 takes. No input loop can run unbounded: closed stdin aborts cleanly, and
 repeated invalid answers give up.
 
+The wizard is six steps: **1) Watched region**, **2) Trigger** (with an
+explanation of dwell semantics and re-arm), **3) AI model**, **4) Default
+prompt**, **5) Credentials**, **6) Local archive**. The intro banner
+tells the user Enter keeps the current value and Ctrl+C aborts without saving
+— useful given six steps and no way to know how many are left.
+
+Both the **AI model** and **Default prompt** fields use numbered choices via
+`_ask_choice`. Presets are `(label, value, note)` triples so the numbered list
+can show a short synonym (e.g. `describe`) while `_ask_choice` still stores
+the underlying value (the full prompt string). The current value is appended
+as the final option so the prompt hint `[N+1]` always maps "Enter" to "keep
+current". Typing a non-numeric string is accepted as a custom value so future
+models or hand-tuned prompts work without a wizard update.
+
+The **Watched region** step's "Current" line and the picker's "Picked" line
+both append `(on monitor N of M)` when the region's centre lies on a known
+monitor, via `display.describe_region_monitor`. Multi-monitor users see at a
+glance which display their region belongs to.
+
 ### 5.8 Command line interface (`cli.py`)
 
 ```

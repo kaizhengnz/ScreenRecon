@@ -273,15 +273,8 @@ def _report_picked_region(region: Region, monitors: list[Region]) -> None:
     """Print 'Picked: ... (on monitor N of M)' to the UI."""
     from . import display, ui
 
-    line = (
+    ui.info(
         f"   Picked: left={region['left']} top={region['top']} "
         f"width={region['width']} height={region['height']}"
+        + display.describe_region_monitor(region, monitors)
     )
-    if monitors:
-        cx = region["left"] + region["width"] // 2
-        cy = region["top"] + region["height"] // 2
-        found = display.find_monitor_index_containing(cx, cy, monitors)
-        if found is not None:
-            index, _ = found
-            line += f" (on monitor {index} of {len(monitors)})"
-    ui.info(line)

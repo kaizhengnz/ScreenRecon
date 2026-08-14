@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import getpass
 import json
 import os
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -288,31 +286,17 @@ MAX_PROMPT_RETRIES = 5
 """Give up after this many unusable answers, rather than looping forever."""
 
 
-def _read_secret(prompt: str) -> str:
-    """Read one secret line.
-
-    - **Non-Windows**: ``getpass.getpass``. Terminals honour termios line
-      editing, so paste works and characters stay hidden.
-    - **Windows**: plain ``input()``. Characters are visible as the user types
-      or pastes — a real UX regression vs. ``getpass``, but the alternatives
-      lose paste support (``msvcrt.getwch`` per-char) or leave the user
-      guessing whether their paste took effect. Callers still echo a masked
-      confirmation after Enter (``ui.mask``) so the terminal scrollback keeps
-      only ``sk-ant-a... (N chars)`` prefixes, and the wizard advises clearing
-      the terminal history before publishing screenshots of the setup.
-    """
-    if sys.platform == "win32":
-        return input(prompt)
-    return getpass.getpass(prompt)
-
-
 def _ask(label: str, current: Any, *, secret: bool = False) -> str:
     """Prompt for one value. Enter keeps the current value.
 
-    Secrets are read through :func:`_read_secret` (no terminal echo, paste-
-    capable on Windows), so the typed value is never echoed to the terminal,
-    never reaches shell/readline history, and cannot be captured from
-    scrollback — or by ScreenRecon's own screenshots (NFR-3).
+    ``secret=True`` no longer hides characters during typing — API keys, bot
+    tokens and chat IDs are all printable ASCII, and hiding them broke paste
+    on Windows and left the user unsure whether their input landed. What
+    ``secret`` still does: shows the current value as a mask in the ``[hint]``
+    (so an existing key is not re-displayed in full), and echoes a masked
+    confirmation after Enter (so scrollback keeps only ``sk-ant-a... (N chars)``
+    prefixes instead of the whole key repeated). NFR-3 still applies at
+    runtime — the watch loop, logs, and tracebacks never quote a secret.
     """
     has_current = current is not None and str(current) != ""
     if not has_current:
@@ -324,7 +308,7 @@ def _ask(label: str, current: Any, *, secret: bool = False) -> str:
 
     prompt = f"{label} [{hint}]: "
     try:
-        answer = (_read_secret(prompt) if secret else input(prompt)).strip()
+        answer = input(prompt).strip()
     except EOFError:
         raise WizardAborted(
             "No input available (stdin is closed). Run 'screenrecon --configure' "
@@ -333,9 +317,6 @@ def _ask(label: str, current: Any, *, secret: bool = False) -> str:
     # An empty answer means "keep the current value" — including a current 0.
     if answer:
         if secret:
-            # Echo a masked confirmation so the user knows the paste landed and
-            # roughly what shape it took — NFR-3 stays intact via ui.mask (first
-            # 8 chars only, plus length).
             ui.info(f"    received: {ui.mask(answer)}")
         return answer
     return "" if current is None else str(current)
@@ -532,14 +513,11 @@ def _run_wizard(
     )
 
     ui.info("\n5) Credentials")
-    if sys.platform == "win32":
-        ui.info(
-            "   Characters are visible while typing/pasting on Windows so paste"
-            " works. Clear your terminal history after setup if you plan to"
-            " share screenshots or scrollback."
-        )
-    else:
-        ui.info("   Typed characters are hidden; paste works.")
+    ui.info(
+        "   Characters are visible while typing so paste works. Clear your"
+        " terminal history after setup if you plan to share screenshots or"
+        " scrollback."
+    )
     env_key = os.environ.get(ENV_API_KEY, "").strip()
     if env_key:
         ui.info(f"  {ENV_API_KEY} is set ({ui.mask(env_key)}); it wins over this file at runtime.")

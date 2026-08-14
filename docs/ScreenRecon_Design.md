@@ -3,7 +3,7 @@
 | Item | Value |
 |---|---|
 | Project | ScreenRecon |
-| Document version | 0.1.3 |
+| Document version | 0.1.4 |
 | Date | 2026-08-13 |
 | Status | Implemented |
 | Audience | Developers |

@@ -143,6 +143,28 @@ def test_choice_gives_up_after_repeated_invalid_answers(answers):
         config._ask_choice("AI model", config.MODEL_CHOICES, "claude-opus-5")
 
 
+def test_prompt_choice_by_number_returns_the_prompt_text(answers):
+    """Prompt presets store a short label and a full prompt string; picking 1
+    returns the full text, not the label.
+    """
+    scripted, _ = answers
+    scripted.append("1")
+    result = config._ask_choice(
+        "default prompt", config.PROMPT_CHOICES, "old current prompt"
+    )
+    assert result == config.PROMPT_CHOICES[0][1]
+    assert result != config.PROMPT_CHOICES[0][0]  # not the label
+
+
+def test_prompt_choice_enter_keeps_current(answers):
+    scripted, _ = answers
+    scripted.append("")
+    assert (
+        config._ask_choice("default prompt", config.PROMPT_CHOICES, "my custom prompt")
+        == "my custom prompt"
+    )
+
+
 def test_minimum_is_enforced(answers):
     scripted, _ = answers
     scripted.extend(["0", "-5", "800"])
@@ -230,6 +252,8 @@ def test_wizard_shows_centered_default_when_no_region_is_saved(
     out = capsys.readouterr().out
     assert f"left={expected['left']}" in out
     assert f"top={expected['top']}" in out
+    assert "Ctrl+C" in out  # abort hint shown up front
+    assert "(on monitor 1 of 1)" in out  # Current line names the monitor
 
 
 def test_wizard_keeps_current_region_when_user_declines_the_picker(

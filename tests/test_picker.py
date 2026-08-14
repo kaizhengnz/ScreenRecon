@@ -78,14 +78,37 @@ def test_describe_region_monitor_names_the_containing_monitor(monkeypatch):
     assert result == " (on monitor 2 of 2)"
 
 
-def test_describe_region_monitor_is_empty_when_off_screen(monkeypatch):
+def test_describe_region_monitor_falls_back_to_nearest_monitor(monkeypatch):
+    """A region whose centre lies on no monitor still gets an annotation —
+    the nearest monitor by squared distance to its rectangle. Silence would
+    leave the user staring at a coordinate line with no idea which display
+    the config is aimed at (the situation stale-region and pre-SR-20 DPI
+    configs land in)."""
     from screenrecon import display
 
-    monitors = [{"left": 0, "top": 0, "width": 100, "height": 100}]
+    monitors = [
+        {"left": 0, "top": 0, "width": 3456, "height": 2168},
+        {"left": 1728, "top": -1440, "width": 2560, "height": 1440},
+    ]
     monkeypatch.setattr("screenrecon.display.enumerate_monitors", lambda: monitors)
+    # Region centre at (-1352, 745) — off both monitors, but monitor 1 (whose
+    # left edge is at x=0) is closer than monitor 2 (left edge at x=1728).
     assert (
         display.describe_region_monitor(
-            {"left": 500, "top": 500, "width": 10, "height": 10}
+            {"left": -1776, "top": 472, "width": 848, "height": 547}
+        )
+        == " (on monitor 1 of 2)"
+    )
+
+
+def test_describe_region_monitor_is_empty_when_no_monitors_are_known(monkeypatch):
+    """Headless CI / mss failure: no monitors known, so nothing to say."""
+    from screenrecon import display
+
+    monkeypatch.setattr("screenrecon.display.enumerate_monitors", lambda: [])
+    assert (
+        display.describe_region_monitor(
+            {"left": 0, "top": 0, "width": 10, "height": 10}
         )
         == ""
     )

@@ -80,38 +80,88 @@ def find_monitor_index_containing(
     return None
 
 
-def describe_region_monitor(
+def resolve_monitor_info(
     region: dict[str, int], monitors: list[dict[str, int]] | None = None
-) -> str:
-    """Return ``" (on monitor N of M)"`` when the region's centre lies on a
-    known monitor, or the empty string otherwise.
+) -> dict[str, int] | None:
+    """Return ``{"index": N, "of": M}`` for the monitor best associated with
+    ``region`` — the one containing its centre, or, failing that, the nearest
+    one by squared distance to its rectangle. ``None`` when there is nothing
+    to say (headless, no monitors reported, or an incomplete region dict).
 
-    Empty covers: headless / no display, a stale region left over from an
-    unplugged monitor, the centre falling in the gap between monitors, and any
-    ``region`` dict that is missing the four coordinate keys. Callers append
-    the result verbatim to a coordinate line — no formatting needed on the
-    caller side.
+    Meant to be called *once*, at the moment the user picks a region, and the
+    result stored in the config so the watcher displays exactly what was
+    chosen. Recomputing at watch time would drift as monitors are plugged /
+    unplugged or as `mss` reports them differently across DPI-awareness
+    contexts (the SR-20 class of confusion).
     """
     left = region.get("left")
     top = region.get("top")
     width = region.get("width")
     height = region.get("height")
     if not all(isinstance(v, int) for v in (left, top, width, height)):
-        return ""
+        return None
     if monitors is None:
         try:
             monitors = enumerate_monitors()
         except Exception:
-            return ""
+            return None
     if not monitors:
-        return ""
+        return None
     cx = left + width // 2  # type: ignore[operator]
     cy = top + height // 2  # type: ignore[operator]
     found = find_monitor_index_containing(cx, cy, monitors)
-    if found is None:
+    index = found[0] if found is not None else _nearest_monitor_index(cx, cy, monitors)
+    return {"index": index, "of": len(monitors)}
+
+
+def format_monitor_info(info: dict[str, int] | None) -> str:
+    """Render stored monitor info as `` (on monitor N of M)``, or empty string.
+
+    Keeps rendering out of the config layer: config holds `{"index", "of"}`,
+    display owns the human string. Empty when ``info`` is ``None`` or is
+    missing either key.
+    """
+    if not isinstance(info, dict):
         return ""
-    index, _ = found
-    return f" (on monitor {index} of {len(monitors)})"
+    index = info.get("index")
+    of = info.get("of")
+    if not isinstance(index, int) or not isinstance(of, int):
+        return ""
+    return f" (on monitor {index} of {of})"
+
+
+def describe_region_monitor(
+    region: dict[str, int], monitors: list[dict[str, int]] | None = None
+) -> str:
+    """Compute the monitor annotation for ``region`` on the fly.
+
+    Convenience wrapper for the pre-``monitor``-field configs and for the
+    picker's post-pick "Picked: ... (on monitor N of M)" line. New code
+    that has a stored monitor info dict should call
+    :func:`format_monitor_info` on that dict instead — the stored value is
+    what the user chose, and does not drift with topology changes.
+    """
+    return format_monitor_info(resolve_monitor_info(region, monitors))
+
+
+def _nearest_monitor_index(cx: int, cy: int, monitors: list[dict[str, int]]) -> int:
+    """Return the 1-based index of the monitor whose rectangle is closest to
+    ``(cx, cy)``. Distance is squared distance to the nearest edge (0 when the
+    point is inside), so no square root. Ties break to the earlier monitor.
+    """
+    def squared_distance(m: dict[str, int]) -> int:
+        dx = max(m["left"] - cx, 0, cx - (m["left"] + m["width"]))
+        dy = max(m["top"] - cy, 0, cy - (m["top"] + m["height"]))
+        return dx * dx + dy * dy
+
+    best_index = 1
+    best_distance = squared_distance(monitors[0])
+    for i, m in enumerate(monitors[1:], start=2):
+        d = squared_distance(m)
+        if d < best_distance:
+            best_distance = d
+            best_index = i
+    return best_index
 
 
 def find_monitor_containing(

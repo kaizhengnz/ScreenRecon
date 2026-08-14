@@ -221,10 +221,12 @@ def run(cfg: Mapping[str, Any], prompt: str, *, debug: bool = False) -> int:
     check_environment(cfg)
 
     ui.rule("ScreenRecon watching")
-    ui.info(
-        f"Region: {_format_region(cfg['region'])}"
-        + display.describe_region_monitor(cfg["region"])
+    stored_monitor = cfg.get("monitor") if isinstance(cfg.get("monitor"), dict) else None
+    annotation = (
+        display.format_monitor_info(stored_monitor)
+        or display.describe_region_monitor(cfg["region"])
     )
+    ui.info(f"Region: {_format_region(cfg['region'])}{annotation}")
     ui.info(f"Fires after {cfg['dwell_seconds']}s dwell | model {cfg['model']}")
     print_destinations(cfg)
     ui.info(f"Prompt: {prompt}")

@@ -104,6 +104,7 @@ Prompt presets are added by editing the file — the wizard does not ask for the
 | Field | Notes |
 | --- | --- |
 | `region` | Screen rectangle. `width`/`height` must be positive; `left`/`top` may be negative for monitors positioned left of or above the primary display. |
+| `monitor` | Optional, written by `--configure` / `--screen`: `{"index": N, "of": M}` records which monitor the region was picked on so the watch banner can show it verbatim. Regenerated whenever the region is re-picked; delete it to force a live recompute. |
 | `dwell_seconds` | How long the mouse must stay inside before firing. Fractional values are allowed. |
 | `model` | Any current AI model with vision. `claude-haiku-4-5` is the default; set `claude-opus-5` for higher accuracy on complex scenes. |
 | `prompts` | Named presets, selected with `--mode NAME`. |

@@ -450,7 +450,8 @@ def test_set_region_refuses_when_no_config_exists(tmp_path, capsys):
 def test_set_region_keeps_partial_config_partial(tmp_path):
     """A partial config (some fields missing) must stay partial after --screen —
     running --screen must not silently pad the file with defaults for fields
-    the user has deliberately not set yet."""
+    the user has deliberately not set yet. The ``monitor`` field is a
+    picker-owned companion of the region and is allowed to appear."""
     path = tmp_path / "config.json"
     partial = {
         "region": {"left": 0, "top": 0, "width": 100, "height": 100},
@@ -464,6 +465,69 @@ def test_set_region_keeps_partial_config_partial(tmp_path):
     )
 
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert set(saved.keys()) == {"region", "anthropic_api_key"}
+    assert set(saved.keys()) <= {"region", "anthropic_api_key", "monitor"}
     assert saved["region"] == picked
     assert saved["anthropic_api_key"] == "just-a-key"
+
+
+def test_set_region_records_the_monitor(tmp_path, monkeypatch):
+    """--screen must record which monitor the picked region belongs to, so the
+    watcher can display it without recomputing (and without drifting if the
+    monitor topology changes later)."""
+    from screenrecon import display
+
+    path = tmp_path / "config.json"
+    path.write_text(
+        json.dumps(
+            {
+                "region": {"left": 0, "top": 0, "width": 100, "height": 100},
+                "anthropic_api_key": "k",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monitors = [
+        {"left": 0, "top": 0, "width": 1920, "height": 1080},
+        {"left": 1920, "top": 0, "width": 2560, "height": 1440},
+    ]
+    monkeypatch.setattr(display, "enumerate_monitors", lambda: monitors)
+
+    # Picked centre (3000, 700) lies on monitor 2.
+    picked = {"left": 2500, "top": 500, "width": 1000, "height": 400}
+    assert (
+        config.run_set_region(path, picker_factory=_picker_factory(picked)) == 0
+    )
+
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["monitor"] == {"index": 2, "of": 2}
+
+
+def test_set_region_clears_a_stale_monitor_when_enumeration_fails(tmp_path, monkeypatch):
+    """A previously-stored monitor annotation must not linger when we cannot
+    recompute — leaving stale info would defeat the whole point of storing it."""
+    from screenrecon import display
+
+    path = tmp_path / "config.json"
+    path.write_text(
+        json.dumps(
+            {
+                "region": {"left": 0, "top": 0, "width": 100, "height": 100},
+                "monitor": {"index": 1, "of": 2},
+                "anthropic_api_key": "k",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def raise_():
+        raise RuntimeError("mss cannot enumerate here")
+
+    monkeypatch.setattr(display, "enumerate_monitors", raise_)
+
+    picked = {"left": 10, "top": 20, "width": 300, "height": 200}
+    assert (
+        config.run_set_region(path, picker_factory=_picker_factory(picked)) == 0
+    )
+
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert "monitor" not in saved

@@ -412,25 +412,53 @@ def _ask_choice(
 
 def _prompt_region(
     current: dict[str, Any],
+    current_monitor: dict[str, int] | None,
     picker_factory: PickerFactory | None,
 ) -> dict[str, Any]:
     """Print the current region, offer to update it, and delegate to the picker.
 
     Kept intentionally thin — the picker owns the whole "give me a region"
     concern (open, cancel-fallback, PickerError-fallback, monitor reporting).
+    ``current_monitor`` is the config's stored ``monitor`` field (if any);
+    the "Current" line uses it verbatim rather than recomputing, so what the
+    user sees matches what the config records.
     """
     from . import display
     from . import picker as picker_module
 
+    annotation = (
+        display.format_monitor_info(current_monitor)
+        or display.describe_region_monitor(current)
+    )
     ui.info(
         f"   Current: left={current.get('left')} top={current.get('top')} "
         f"width={current.get('width')} height={current.get('height')}"
-        + display.describe_region_monitor(current)
+        + annotation
     )
     answer = _ask("   Update this region?", "N").strip().lower()
     if answer in ("y", "yes"):
         return picker_module.pick_region_or_default(current, picker_factory)
     return current
+
+
+def _apply_monitor_info(
+    target: dict[str, Any], region: dict[str, Any]
+) -> None:
+    """Compute the monitor for ``region`` right now and write / clear
+    ``target["monitor"]`` accordingly.
+
+    The stored value is what the user chose — it does not drift as monitors
+    are plugged / unplugged or as `mss` reports them differently across DPI
+    contexts (the SR-20 class of confusion). Clearing on failure prevents a
+    stale annotation from lingering when the enumeration cannot be trusted.
+    """
+    from . import display
+
+    info = display.resolve_monitor_info(region)
+    if info is not None:
+        target["monitor"] = info
+    elif "monitor" in target:
+        del target["monitor"]
 
 
 def run_wizard(
@@ -490,15 +518,21 @@ def run_set_region(
     cfg = merge_defaults(raw)
     ui.rule("ScreenRecon set region")
     ui.info(f"Config file: {resolved}")
+    stored_monitor = raw.get("monitor") if isinstance(raw.get("monitor"), dict) else None
+    current_annotation = (
+        display.format_monitor_info(stored_monitor)
+        or display.describe_region_monitor(cfg["region"])
+    )
     ui.info(
         f"   Current: left={cfg['region'].get('left')} top={cfg['region'].get('top')} "
         f"width={cfg['region'].get('width')} height={cfg['region'].get('height')}"
-        + display.describe_region_monitor(cfg["region"])
+        + current_annotation
     )
     new_region = picker_module.pick_region_or_default(
         dict(cfg["region"]), picker_factory
     )
     raw["region"] = new_region
+    _apply_monitor_info(raw, new_region)
 
     try:
         validate_config(merge_defaults(raw))
@@ -547,7 +581,9 @@ def _run_wizard(
     ui.info("Press Enter to keep the current value. Nothing is saved until every step is done.\n")
 
     ui.info("1) Watched region")
-    cfg["region"] = _prompt_region(dict(cfg["region"]), picker_factory)
+    stored_monitor = raw.get("monitor") if isinstance(raw.get("monitor"), dict) else None
+    cfg["region"] = _prompt_region(dict(cfg["region"]), stored_monitor, picker_factory)
+    _apply_monitor_info(cfg, cfg["region"])
 
     ui.info("\n2) Trigger")
     ui.info(

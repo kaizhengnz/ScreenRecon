@@ -66,6 +66,7 @@ cursor there will never re-trigger.
 | `screenrecon ask` | Capture once, then keep asking questions about that screenshot |
 | `screenrecon --mode NAME ask` | Capture once and ask the `prompts.NAME` preset |
 | `screenrecon --config PATH` | Use an alternative config file |
+| `screenrecon --debug` | Watch as usual and show a persistent red outline around the region (visual sanity check) |
 | `screenrecon --version` | Print the version |
 
 Global flags come before the subcommand: `screenrecon --config PATH ask "..."`,

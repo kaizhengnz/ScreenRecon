@@ -6,7 +6,7 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
-from . import capture, notify, platform, storage, ui, vision
+from . import capture, notify, outline, platform, storage, ui, vision
 
 CREDENTIAL_KEYS = ("anthropic_api_key", "telegram_bot_token", "telegram_chat_id")
 
@@ -203,8 +203,12 @@ def _format_region(region: Mapping[str, Any]) -> str:
     )
 
 
-def run(cfg: Mapping[str, Any], prompt: str) -> int:
-    """Run the watch loop. Returns the process exit code."""
+def run(cfg: Mapping[str, Any], prompt: str, *, debug: bool = False) -> int:
+    """Run the watch loop. Returns the process exit code.
+
+    ``debug=True`` overlays a persistent red outline around the watched region
+    so the user can visually verify it — best-effort, torn down on exit.
+    """
     trigger = DwellTrigger(cfg["region"], cfg["dwell_seconds"])
 
     try:
@@ -222,6 +226,10 @@ def run(cfg: Mapping[str, Any], prompt: str) -> int:
     print_destinations(cfg)
     ui.info(f"Prompt: {prompt}")
     ui.info("Press Ctrl+C to quit.\n")
+
+    overlay = outline.RegionOutline(cfg["region"]) if debug else None
+    if overlay is not None:
+        overlay.open()
 
     failures = 0
     try:
@@ -262,10 +270,15 @@ def run(cfg: Mapping[str, Any], prompt: str) -> int:
                     )
                 ui.info("Move the cursor out of the region to arm the next trigger...")
 
+            if overlay is not None:
+                overlay.poll()
             time.sleep(POLL_INTERVAL)
     except KeyboardInterrupt:
         ui.info("\nScreenRecon stopped.")
         return 0
+    finally:
+        if overlay is not None:
+            overlay.close()
 
 
 def run_ask(cfg: Mapping[str, Any], question: str | None) -> int:

@@ -38,7 +38,12 @@ def calls(monkeypatch):
         recorded[name] = value
         return 0
 
-    monkeypatch.setattr(watcher, "run", lambda cfg, prompt: record("watch", prompt))
+    def record_watch(cfg, prompt, *, debug=False):
+        record("watch", prompt)
+        record("debug", debug)
+        return 0
+
+    monkeypatch.setattr(watcher, "run", record_watch)
     monkeypatch.setattr(watcher, "run_ask", lambda cfg, question: record("ask", question))
     monkeypatch.setattr(config, "run_wizard", lambda path: record("wizard", path))
     return recorded
@@ -52,6 +57,12 @@ def calls(monkeypatch):
 def test_no_arguments_starts_the_watch_loop(config_file, calls):
     assert cli.main(["--config", config_file]) == 0
     assert calls["watch"] == "default prompt"
+    assert calls["debug"] is False
+
+
+def test_debug_flag_is_forwarded_to_the_watch_loop(config_file, calls):
+    assert cli.main(["--config", config_file, "--debug"]) == 0
+    assert calls["debug"] is True
 
 
 def test_mode_selects_the_preset(config_file, calls):
@@ -141,16 +152,17 @@ def test_missing_credentials_exit_one(tmp_path, monkeypatch, capsys):
 
 
 def test_keyboard_interrupt_exits_130(config_file, monkeypatch):
-    monkeypatch.setattr(
-        watcher, "run", lambda cfg, prompt: (_ for _ in ()).throw(KeyboardInterrupt())
-    )
+    def interrupt(cfg, prompt, *, debug=False):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(watcher, "run", interrupt)
     assert cli.main(["--config", config_file]) == 130
 
 
 def test_unexpected_errors_are_caught_and_scrubbed(config_file, monkeypatch, capsys):
     """A traceback here would carry the credentials in its frame locals."""
 
-    def explode(cfg, prompt):
+    def explode(cfg, prompt, *, debug=False):
         raise RuntimeError(f"boom with key {cfg['anthropic_api_key']}")
 
     monkeypatch.setattr(watcher, "run", explode)

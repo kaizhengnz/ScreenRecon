@@ -17,7 +17,7 @@
 | **0.1.1** | 2026-08-13 | English | §7 rewritten: release flow moves from a single direct-push workflow to a two-workflow PR-based flow (`release_pr.yml` opens a release PR with auto-merge; `release_auto.yml` runs test / build / tag / publish on the merge commit). Motivated by branch-protection alignment — `github-actions[bot]` cannot bypass rulesets, so bumps must land via PR like every other change. |
 | **0.1.2** | 2026-08-14 | English | Drag-to-select region picker replaces the `--show-cursor` + manual-entry flow (SR-2). New §5.9 documents the tkinter overlay and its test seam. FR-12 restated in terms of the picker; §3.3 no longer lists a graphical picker as out of scope. `--show-cursor` was removed from the CLI; users on the old flag get a one-line hint pointing at `--configure`. Multi-monitor: the overlay spans the virtual desktop, and `platform.enumerate_monitors()` / `find_monitor_containing()` power the Esc-fallback centring on whichever monitor holds the cursor. |
 | **0.1.3** | 2026-08-14 | English | Refactor pass (SR-7): monitor / virtual-desktop / mss code split out of `platform.py` into a new `display.py`, so the cursor path no longer implicitly depends on mss. Picker fallback orchestration hoisted into `picker.pick_region_or_default(current, factory)` — the wizard now delegates one call and no longer knows the picker's internals. Robustness: Tk callback exceptions captured via `report_callback_exception`, `root.destroy` deferred with `after_idle` (macOS focus fix), zero-area click prints a distinguishing notice, and mss shim uses `hasattr`. New §5.10 documents `display.py`. |
-| **0.1.5** | 2026-08-14 | English | Windows multi-monitor DPI fix (SR-20): `platform.ensure_dpi_awareness()` now prefers per-monitor DPI aware v2 (`SetProcessDpiAwarenessContext(-4)`), falling through to v1 / system awareness on older Windows or manifest-pinned processes. Under v1 the picker's fullscreen overlay spanning mixed-DPI monitors received mouse events in the primary monitor's logical coordinate space instead of physical pixels, so `event.x_root/y_root` disagreed with mss's physical-pixel space — the saved region landed on the wrong monitor and mss then captured the wrong rectangle. |
+| **0.1.5** | 2026-08-14 | English | Windows multi-monitor DPI fix (SR-20): `platform.ensure_dpi_awareness()` now prefers per-monitor DPI aware v2 (`SetProcessDpiAwarenessContext(-4)`), falling through to v1 / system awareness on older Windows or manifest-pinned processes. Under v1 the picker's fullscreen overlay spanning mixed-DPI monitors received mouse events in the primary monitor's logical coordinate space instead of physical pixels, so `event.x_root/y_root` disagreed with mss's physical-pixel space — the saved region landed on the wrong monitor and mss then captured the wrong rectangle. New `--debug` flag (watch mode only): draws a persistent red 3px outline around the watched region so users can visually verify it matches their intent. Implemented as four thin borderless always-on-top Tk edge windows sitting just outside the capture rectangle — the region interior has no window over it, so clicks pass through naturally without needing platform-specific click-through APIs. Best-effort: `open()` warns and no-ops when tkinter is missing or Tk construction fails. New module `outline.py`; see §5.11. |
 
 ---
 
@@ -499,6 +499,31 @@ SR-7 so the cursor path (a small ctypes / pyobjc / xlib layer) no longer
 implicitly depends on `mss`. `capture.py` opens its own `mss` context per
 frame and does not go through this module; the picker and the wizard's
 post-pick "on monitor N of M" report do.
+
+### 5.11 Debug outline (`outline.py`)
+
+Reached by passing `--debug` to the watch entry point. Draws a persistent
+red 3px border around the configured region so the user can visually verify
+the region matches what they expect (motivated by the SR-20 class of "the
+saved region is not where I think it is" confusion).
+
+Implementation: four thin borderless `overrideredirect + -topmost` Tk
+toplevels form the top / bottom / left / right edges of a rectangle sitting
+just *outside* the capture region. Two consequences of this shape:
+
+- **Click-through is free.** The region interior has no window over it, so
+  clicks pass through naturally — no need for Windows `-transparentcolor`,
+  macOS `setIgnoresMouseEvents:`, or X11 XShape. One implementation, three
+  platforms.
+- **The border can never appear in a capture.** It sits outside `(left, top,
+  left+width, top+height)`; `mss.grab()` reads exactly that box.
+
+The narrow border strips themselves do block clicks in those few pixels;
+accepted trade for a debug aid. `RegionOutline.poll()` pumps pending Tk
+events and is called from the watcher loop so the strips survive WM redraw
+requests. `open()` is best-effort — a missing `tkinter` or a Tk construction
+failure (headless, no display) prints a warning and the watcher continues
+without the overlay.
 
 ---
 

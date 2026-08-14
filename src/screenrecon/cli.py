@@ -48,6 +48,11 @@ def build_parser() -> argparse.ArgumentParser:
         # into bug reports and should not disclose the user's home directory.
         help="use an alternative config file (default: ~/.config/screenrecon/config.json)",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="show a persistent red outline around the watched region (watch mode only)",
+    )
 
     subparsers = parser.add_subparsers(dest="command")
     ask_parser = subparsers.add_parser(
@@ -136,7 +141,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             question = " ".join(args.question).strip() or (prompt if args.mode else None)
             return watcher.run_ask(cfg, question)
 
-        return watcher.run(cfg, prompt)
+        return watcher.run(cfg, prompt, debug=args.debug)
 
     except config.ConfigError as exc:
         ui.error(str(exc))

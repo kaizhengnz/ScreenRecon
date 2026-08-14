@@ -33,7 +33,7 @@ class AnthropicProvider:
         turns: Sequence[Turn],
         on_delta: Callable[[str], None],
     ) -> Reply:
-        api_key = str(cfg.get("anthropic_api_key") or cfg.get("api_key") or "")
+        api_key = str(cfg.get("api_key") or cfg.get("anthropic_api_key") or "")
         model = str(cfg.get("model") or "")
         try:
             import anthropic
@@ -93,7 +93,7 @@ class AnthropicProvider:
         return Reply(False, "The AI API call failed. Please retry.")
 
     def verify_key(self, cfg: Mapping[str, Any]) -> tuple[bool, str]:
-        api_key = str(cfg.get("anthropic_api_key") or cfg.get("api_key") or "").strip()
+        api_key = str(cfg.get("api_key") or cfg.get("anthropic_api_key") or "").strip()
         model = str(cfg.get("model") or "").strip()
         if not api_key:
             return False, "No API key entered."

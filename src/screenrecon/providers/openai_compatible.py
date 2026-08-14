@@ -13,16 +13,6 @@ from typing import Any
 
 from .openai import OpenAIProvider
 
-PRESET_BASE_URLS: dict[str, str] = {
-    "deepseek": "https://api.deepseek.com/v1",
-    "moonshot": "https://api.moonshot.cn/v1",
-    "kimi": "https://api.moonshot.cn/v1",   # alias
-    "doubao": "https://ark.cn-beijing.volces.com/api/v3",
-}
-"""Wizard shortcuts: a user picks one of these labels and the base URL is
-pre-filled. Values verified against each provider's compat-mode docs at
-the time of writing; users can still type any custom URL."""
-
 
 class OpenAICompatibleProvider(OpenAIProvider):
     name = "openai_compatible"

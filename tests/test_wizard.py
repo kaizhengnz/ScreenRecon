@@ -562,6 +562,71 @@ def test_set_key_refuses_when_no_config_exists(tmp_path, capsys):
     assert not path.exists()
 
 
+def test_set_key_names_the_current_provider_on_prompt(tmp_path, answers, capsys):
+    """--key should tell the user *which* provider it is prompting for, so a
+    user who just switched via --model doesn't wonder which key to paste."""
+    scripted, _ = answers
+    path = tmp_path / "config.json"
+    payload = _existing_config()
+    payload["provider"] = "openai"
+    payload["model"] = "gpt-5"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    scripted.append("sk-openai-new-key")
+
+    assert config.run_set_key(path) == 0
+    out = capsys.readouterr().out
+    assert "OpenAI" in out  # display_name of the openai provider
+
+
+def test_prompt_compat_endpoint_picks_preset_by_number(monkeypatch):
+    """Numbered input '1' selects the first preset (verified by URL)."""
+    scripted: list[str] = ["1"]
+
+    def take(prompt=""):
+        return scripted.pop(0) if scripted else ""
+
+    monkeypatch.setattr("builtins.input", take)
+    target: dict = {}
+    default_model = config._prompt_compat_endpoint(target)
+    first_label, (first_url, first_model, _note) = next(iter(config.COMPAT_PRESETS.items()))
+    assert target["base_url"] == first_url
+    assert target["model"] == first_model
+    assert default_model == first_model
+
+
+def test_prompt_compat_endpoint_recognises_preset_label(monkeypatch):
+    """Typing 'deepseek' expands to the DeepSeek base URL + default model."""
+    scripted: list[str] = ["deepseek"]
+
+    def take(prompt=""):
+        return scripted.pop(0) if scripted else ""
+
+    monkeypatch.setattr("builtins.input", take)
+    target: dict = {}
+    default_model = config._prompt_compat_endpoint(target)
+    deepseek_url, deepseek_model, _ = config.COMPAT_PRESETS["deepseek"]
+    assert target["base_url"] == deepseek_url
+    assert target["model"] == deepseek_model
+    assert default_model == deepseek_model
+
+
+def test_prompt_compat_endpoint_custom_url_leaves_model_alone(monkeypatch):
+    """Typing an arbitrary URL sets base_url but returns None so the caller
+    still asks for the model separately — a custom endpoint has no known
+    default vision model."""
+    scripted: list[str] = ["https://compat.example.com/v1"]
+
+    def take(prompt=""):
+        return scripted.pop(0) if scripted else ""
+
+    monkeypatch.setattr("builtins.input", take)
+    target: dict = {"model": "keep-me"}
+    default_model = config._prompt_compat_endpoint(target)
+    assert target["base_url"] == "https://compat.example.com/v1"
+    assert target["model"] == "keep-me"
+    assert default_model is None
+
+
 def test_set_model_updates_only_the_model(tmp_path, answers):
     scripted, _ = answers
     path = tmp_path / "config.json"

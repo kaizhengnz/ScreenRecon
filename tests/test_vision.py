@@ -338,3 +338,31 @@ def test_verify_key_rejects_an_empty_key():
     ok, message = vision.verify_key(_cfg(key=""))
     assert ok is False
     assert "No API key" in message
+
+
+def test_anthropic_provider_prefers_api_key_over_legacy_field(monkeypatch):
+    """When both `api_key` and `anthropic_api_key` are present, the new
+    field wins — legacy migration must be one-way. Reads the api_key from
+    the fake client's recorded requests to prove the right key reached the SDK.
+
+    Uses a lightweight fake to capture what the SDK received; no network."""
+    captured = {}
+
+    class RecordingClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.messages = RecordingMessages()
+
+    class RecordingMessages:
+        def stream(self, **kwargs):
+            return FakeStream(["ok"], FakeMessage([FakeBlock("text", "ok")]))
+
+    monkeypatch.setattr(anthropic, "Anthropic", RecordingClient)
+    cfg = {
+        "model": "claude-opus-5",
+        "api_key": "sk-ant-NEW-authoritative",
+        "anthropic_api_key": "sk-ant-OLD-stale",
+    }
+    reply = vision.ask_streaming(cfg, [], lambda _: None)
+    assert reply.ok is True
+    assert captured["api_key"] == "sk-ant-NEW-authoritative"

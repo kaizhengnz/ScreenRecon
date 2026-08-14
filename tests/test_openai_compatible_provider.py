@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from screenrecon.providers.openai_compatible import (
-    PRESET_BASE_URLS,
-    OpenAICompatibleProvider,
-)
+from screenrecon.config import COMPAT_PRESETS
+from screenrecon.providers.openai_compatible import OpenAICompatibleProvider
 
 
 def test_missing_base_url_fails_verification_without_hitting_network():
@@ -29,12 +27,14 @@ def test_missing_base_url_fails_ask_streaming_without_hitting_network():
 def test_preset_base_urls_include_the_three_supported_chinese_providers():
     """Wizard shortcuts (see SR-23 issue) must at minimum offer DeepSeek,
     Kimi (Moonshot), and Doubao — the three named in the design."""
-    assert "deepseek" in PRESET_BASE_URLS
-    assert "kimi" in PRESET_BASE_URLS or "moonshot" in PRESET_BASE_URLS
-    assert "doubao" in PRESET_BASE_URLS
-    # Every preset must be a full https URL, not a bare host.
-    for label, url in PRESET_BASE_URLS.items():
+    assert "deepseek" in COMPAT_PRESETS
+    assert "kimi" in COMPAT_PRESETS or "moonshot" in COMPAT_PRESETS
+    assert "doubao" in COMPAT_PRESETS
+    # Every preset must be a full https URL, not a bare host, and carry
+    # a default model ID so the wizard has something to pre-fill.
+    for label, (url, default_model, _note) in COMPAT_PRESETS.items():
         assert url.startswith("https://"), f"{label} preset must be https://"
+        assert default_model, f"{label} preset must include a default model"
 
 
 def test_openai_compatible_is_never_inferred_from_model_prefix():

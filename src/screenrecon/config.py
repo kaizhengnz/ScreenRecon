@@ -746,7 +746,13 @@ def _prompt_provider_and_model(target: dict[str, Any]) -> None:
     target["provider"] = chosen_provider
 
     if chosen_provider == "openai_compatible":
-        _prompt_compat_endpoint(target)
+        model_from_preset = _prompt_compat_endpoint(target)
+        if model_from_preset:
+            # The preset already pre-filled a matching vision model; asking
+            # again would be "you already told me this" — skip the model
+            # prompt entirely. If the user wants to override, they can run
+            # --model again and pick a custom URL (which returns None here).
+            return
 
     model_options = MODEL_CHOICES_BY_PROVIDER.get(chosen_provider, [])
     current_model = str(target.get("model") or DEFAULT_MODEL)
@@ -767,12 +773,17 @@ def _prompt_provider_and_model(target: dict[str, Any]) -> None:
         )
 
 
-def _prompt_compat_endpoint(target: dict[str, Any]) -> None:
+def _prompt_compat_endpoint(target: dict[str, Any]) -> str | None:
     """Ask which OpenAI-compatible endpoint to talk to.
 
+    Returns the preset's default model name when the user picked a preset
+    (numbered or typed by label) — caller uses that as the "model already
+    picked" signal. Returns ``None`` when the user typed a custom base URL
+    or chose "keep current", so the caller re-prompts for the model.
+
     A numbered preset picks a verified base URL + a suggested vision model
-    in one step; typing text is treated as a custom base URL, and the model
-    prompt that follows lets the user set the right ID for that endpoint.
+    in one step; typing text is treated as a preset label if it matches, or
+    a custom base URL otherwise.
     """
     presets = list(COMPAT_PRESETS.items())
     current_base = str(target.get("base_url") or "")
@@ -799,10 +810,10 @@ def _prompt_compat_endpoint(target: dict[str, Any]) -> None:
                 label, (url, default_model, _note) = presets[number - 1]
                 target["base_url"] = url
                 target["model"] = default_model
-                return
+                return default_model
             if number == len(presets) + 1:
-                # Keep current base URL; model prompt below handles the model.
-                return
+                # Keep current base URL; model prompt handled by the caller.
+                return None
             ui.warn(f"    Choice must be 1-{len(presets) + 1}; try again.")
             continue
         # Try preset by label first, otherwise treat as a raw URL.
@@ -810,9 +821,9 @@ def _prompt_compat_endpoint(target: dict[str, Any]) -> None:
             url, default_model, _ = COMPAT_PRESETS[answer.lower()]
             target["base_url"] = url
             target["model"] = default_model
-            return
+            return default_model
         target["base_url"] = answer
-        return
+        return None
     raise WizardAborted("Endpoint URL: too many invalid answers, giving up.")
 
 

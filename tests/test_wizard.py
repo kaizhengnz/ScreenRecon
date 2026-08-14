@@ -37,7 +37,7 @@ def answers(monkeypatch):
 
 @pytest.fixture
 def offline(monkeypatch):
-    monkeypatch.setattr(vision, "verify_key", lambda key, model: (True, "ok"))
+    monkeypatch.setattr(vision, "verify_key", lambda cfg: (True, "ok"))
     monkeypatch.setattr(notify, "verify_credentials", lambda token, chat: (True, "ok"))
 
 
@@ -103,7 +103,11 @@ def test_choice_picks_a_preset_by_number(answers):
     scripted, _ = answers
     scripted.append("2")
     assert (
-        config._ask_choice("AI model", config.MODEL_CHOICES, "claude-opus-5")
+        config._ask_choice(
+            "AI model",
+            config.MODEL_CHOICES_BY_PROVIDER["anthropic"],
+            "claude-opus-5",
+        )
         == "claude-haiku-4-5"
     )
 
@@ -113,7 +117,11 @@ def test_choice_enter_keeps_current_via_last_index(answers):
     scripted, _ = answers
     scripted.append("")
     assert (
-        config._ask_choice("AI model", config.MODEL_CHOICES, "claude-sonnet-5-preview")
+        config._ask_choice(
+            "AI model",
+            config.MODEL_CHOICES_BY_PROVIDER["anthropic"],
+            "claude-sonnet-5-preview",
+        )
         == "claude-sonnet-5-preview"
     )
 
@@ -123,7 +131,11 @@ def test_choice_typed_text_becomes_a_custom_value(answers):
     scripted, _ = answers
     scripted.append("claude-brand-new-model")
     assert (
-        config._ask_choice("AI model", config.MODEL_CHOICES, "claude-opus-5")
+        config._ask_choice(
+            "AI model",
+            config.MODEL_CHOICES_BY_PROVIDER["anthropic"],
+            "claude-opus-5",
+        )
         == "claude-brand-new-model"
     )
 
@@ -133,7 +145,11 @@ def test_choice_out_of_range_number_retries(answers):
     scripted, _ = answers
     scripted.extend(["9", "0", "2"])
     assert (
-        config._ask_choice("AI model", config.MODEL_CHOICES, "claude-opus-5")
+        config._ask_choice(
+            "AI model",
+            config.MODEL_CHOICES_BY_PROVIDER["anthropic"],
+            "claude-opus-5",
+        )
         == "claude-haiku-4-5"
     )
 
@@ -142,7 +158,11 @@ def test_choice_gives_up_after_repeated_invalid_answers(answers):
     scripted, _ = answers
     scripted.extend(["9"] * (config.MAX_PROMPT_RETRIES + 2))
     with pytest.raises(config.WizardAborted):
-        config._ask_choice("AI model", config.MODEL_CHOICES, "claude-opus-5")
+        config._ask_choice(
+            "AI model",
+            config.MODEL_CHOICES_BY_PROVIDER["anthropic"],
+            "claude-opus-5",
+        )
 
 
 def test_prompt_choice_by_number_returns_the_prompt_text(answers):
@@ -185,8 +205,9 @@ def test_wizard_writes_every_answer(tmp_path, answers, offline, capsys):
         [
             "Y",  # update the region? Yes → picker runs
             "2.5",  # dwell seconds
-            "claude-haiku-4-5",  # model
-            "read the screen",  # prompt
+            "1",  # provider: 1 = Anthropic (sorted: anthropic, google, openai, openai_compat)
+            "claude-haiku-4-5",  # model (typed custom)
+            "read the screen",  # prompt (typed custom)
             "sk-ant-wizard-key",  # api key
             "123456:wizard-token",  # bot token
             "987654321",  # chat id
@@ -201,7 +222,8 @@ def test_wizard_writes_every_answer(tmp_path, answers, offline, capsys):
     assert saved["region"] == picked
     assert saved["dwell_seconds"] == 2.5
     assert saved["model"] == "claude-haiku-4-5"
-    assert saved["anthropic_api_key"] == "sk-ant-wizard-key"
+    assert saved["provider"] == "anthropic"
+    assert saved["api_key"] == "sk-ant-wizard-key"
     assert saved["telegram_chat_id"] == "987654321"
 
     # NFR-3: nothing the user typed as a credential is echoed back.
@@ -229,6 +251,7 @@ def test_wizard_shows_centered_default_when_no_region_is_saved(
         [
             "n",  # decline the picker; keep the centred default that was shown
             "3",
+            "1",  # provider: Anthropic
             "claude-opus-5",
             "p",
             "k",
@@ -267,7 +290,7 @@ def test_wizard_keeps_current_region_when_user_declines_the_picker(
         json.dumps(
             {
                 "region": {"left": 50, "top": 60, "width": 400, "height": 300},
-                "anthropic_api_key": "old-key",
+                "api_key": "old-key",
                 "telegram_bot_token": "old-token",
                 "telegram_chat_id": "old-chat",
                 "save_dir": str(tmp_path),
@@ -283,6 +306,7 @@ def test_wizard_keeps_current_region_when_user_declines_the_picker(
         [
             "n",  # do NOT update the region
             "3",  # dwell
+            "1",  # provider: Anthropic
             "claude-opus-5",
             "p",
             "k",
@@ -308,7 +332,7 @@ def test_wizard_falls_back_to_default_region_on_picker_cancel(
     scripted, _ = answers
     path = tmp_path / "config.json"
     scripted.extend(
-        ["Y", "3", "claude-opus-5", "p", "k", "t", "c", str(tmp_path)]
+        ["Y", "3", "1", "claude-opus-5", "p", "k", "t", "c", str(tmp_path)]
     )
 
     # Cursor at (500, 500) on the only known monitor.
@@ -342,7 +366,7 @@ def test_wizard_keeps_current_region_when_picker_cannot_open(
         json.dumps(
             {
                 "region": {"left": 50, "top": 60, "width": 400, "height": 300},
-                "anthropic_api_key": "old-key",
+                "api_key": "old-key",
                 "telegram_bot_token": "old-token",
                 "telegram_chat_id": "old-chat",
                 "save_dir": str(tmp_path),
@@ -358,6 +382,7 @@ def test_wizard_keeps_current_region_when_picker_cannot_open(
         [
             "Y",  # open the picker
             "3",
+            "1",  # provider: Anthropic
             "claude-opus-5",
             "p",
             "k",
@@ -388,11 +413,11 @@ def test_wizard_aborts_cleanly_on_closed_stdin(tmp_path, answers, offline, capsy
 
 def test_wizard_reports_failed_verification_but_still_saves(tmp_path, answers, monkeypatch, capsys):
     scripted, _ = answers
-    monkeypatch.setattr(vision, "verify_key", lambda key, model: (False, "key is invalid"))
+    monkeypatch.setattr(vision, "verify_key", lambda cfg: (False, "key is invalid"))
     monkeypatch.setattr(notify, "verify_credentials", lambda token, chat: (True, "ok"))
     path = tmp_path / "config.json"
     scripted.extend(
-        ["Y", "3", "claude-opus-5", "p", "k", "t", "c", str(tmp_path)]
+        ["Y", "3", "1", "claude-opus-5", "p", "k", "t", "c", str(tmp_path)]
     )
     picked = {"left": 10, "top": 20, "width": 300, "height": 200}
 
@@ -413,7 +438,7 @@ def test_set_region_updates_only_the_region_field(tmp_path):
     path = tmp_path / "config.json"
     original = {
         "region": {"left": 50, "top": 60, "width": 400, "height": 300},
-        "anthropic_api_key": "old-key",
+        "api_key": "old-key",
         "telegram_bot_token": "old-token",
         "telegram_chat_id": "old-chat",
         "save_dir": str(tmp_path),
@@ -455,7 +480,7 @@ def test_set_region_keeps_partial_config_partial(tmp_path):
     path = tmp_path / "config.json"
     partial = {
         "region": {"left": 0, "top": 0, "width": 100, "height": 100},
-        "anthropic_api_key": "just-a-key",
+        "api_key": "just-a-key",
     }
     path.write_text(json.dumps(partial), encoding="utf-8")
 
@@ -465,9 +490,9 @@ def test_set_region_keeps_partial_config_partial(tmp_path):
     )
 
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert set(saved.keys()) <= {"region", "anthropic_api_key", "monitor"}
+    assert set(saved.keys()) <= {"region", "api_key", "monitor"}
     assert saved["region"] == picked
-    assert saved["anthropic_api_key"] == "just-a-key"
+    assert saved["api_key"] == "just-a-key"
 
 
 def test_set_region_records_the_monitor(tmp_path, monkeypatch):
@@ -481,7 +506,7 @@ def test_set_region_records_the_monitor(tmp_path, monkeypatch):
         json.dumps(
             {
                 "region": {"left": 0, "top": 0, "width": 100, "height": 100},
-                "anthropic_api_key": "k",
+                "api_key": "k",
             }
         ),
         encoding="utf-8",
@@ -502,12 +527,12 @@ def test_set_region_records_the_monitor(tmp_path, monkeypatch):
     assert saved["monitor"] == {"index": 2, "of": 2}
 
 
-def test_set_key_updates_only_the_key(tmp_path, monkeypatch, answers):
+def test_set_key_updates_only_the_key(tmp_path, answers):
     scripted, _ = answers
     path = tmp_path / "config.json"
     original = {
         "region": {"left": 50, "top": 60, "width": 400, "height": 300},
-        "anthropic_api_key": "old-key",
+        "api_key": "old-key",
         "telegram_bot_token": "old-token",
         "telegram_chat_id": "old-chat",
         "save_dir": str(tmp_path),
@@ -517,15 +542,14 @@ def test_set_key_updates_only_the_key(tmp_path, monkeypatch, answers):
         "model": "claude-opus-5",
     }
     path.write_text(json.dumps(original), encoding="utf-8")
-    monkeypatch.delenv(config.ENV_API_KEY, raising=False)
     scripted.append("sk-ant-new-key-value")
 
     assert config.run_set_key(path) == 0
 
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved["anthropic_api_key"] == "sk-ant-new-key-value"
+    assert saved["api_key"] == "sk-ant-new-key-value"
     for key, value in original.items():
-        if key == "anthropic_api_key":
+        if key == "api_key":
             continue
         assert saved[key] == value
 
@@ -538,12 +562,77 @@ def test_set_key_refuses_when_no_config_exists(tmp_path, capsys):
     assert not path.exists()
 
 
+def test_set_key_names_the_current_provider_on_prompt(tmp_path, answers, capsys):
+    """--key should tell the user *which* provider it is prompting for, so a
+    user who just switched via --model doesn't wonder which key to paste."""
+    scripted, _ = answers
+    path = tmp_path / "config.json"
+    payload = _existing_config()
+    payload["provider"] = "openai"
+    payload["model"] = "gpt-5"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    scripted.append("sk-openai-new-key")
+
+    assert config.run_set_key(path) == 0
+    out = capsys.readouterr().out
+    assert "OpenAI" in out  # display_name of the openai provider
+
+
+def test_prompt_compat_endpoint_picks_preset_by_number(monkeypatch):
+    """Numbered input '1' selects the first preset (verified by URL)."""
+    scripted: list[str] = ["1"]
+
+    def take(prompt=""):
+        return scripted.pop(0) if scripted else ""
+
+    monkeypatch.setattr("builtins.input", take)
+    target: dict = {}
+    default_model = config._prompt_compat_endpoint(target)
+    first_label, (first_url, first_model, _note) = next(iter(config.COMPAT_PRESETS.items()))
+    assert target["base_url"] == first_url
+    assert target["model"] == first_model
+    assert default_model == first_model
+
+
+def test_prompt_compat_endpoint_recognises_preset_label(monkeypatch):
+    """Typing 'deepseek' expands to the DeepSeek base URL + default model."""
+    scripted: list[str] = ["deepseek"]
+
+    def take(prompt=""):
+        return scripted.pop(0) if scripted else ""
+
+    monkeypatch.setattr("builtins.input", take)
+    target: dict = {}
+    default_model = config._prompt_compat_endpoint(target)
+    deepseek_url, deepseek_model, _ = config.COMPAT_PRESETS["deepseek"]
+    assert target["base_url"] == deepseek_url
+    assert target["model"] == deepseek_model
+    assert default_model == deepseek_model
+
+
+def test_prompt_compat_endpoint_custom_url_leaves_model_alone(monkeypatch):
+    """Typing an arbitrary URL sets base_url but returns None so the caller
+    still asks for the model separately — a custom endpoint has no known
+    default vision model."""
+    scripted: list[str] = ["https://compat.example.com/v1"]
+
+    def take(prompt=""):
+        return scripted.pop(0) if scripted else ""
+
+    monkeypatch.setattr("builtins.input", take)
+    target: dict = {"model": "keep-me"}
+    default_model = config._prompt_compat_endpoint(target)
+    assert target["base_url"] == "https://compat.example.com/v1"
+    assert target["model"] == "keep-me"
+    assert default_model is None
+
+
 def test_set_model_updates_only_the_model(tmp_path, answers):
     scripted, _ = answers
     path = tmp_path / "config.json"
     original = {
         "region": {"left": 50, "top": 60, "width": 400, "height": 300},
-        "anthropic_api_key": "old-key",
+        "api_key": "old-key",
         "telegram_bot_token": "old-token",
         "telegram_chat_id": "old-chat",
         "save_dir": str(tmp_path),
@@ -553,13 +642,14 @@ def test_set_model_updates_only_the_model(tmp_path, answers):
         "model": "claude-opus-5",
     }
     path.write_text(json.dumps(original), encoding="utf-8")
-    # Pick preset 2 (claude-haiku-4-5, per MODEL_CHOICES order).
-    scripted.append("2")
+    # Provider: 1 = Anthropic (sorted), model preset 2 = claude-haiku-4-5.
+    scripted.extend(["1", "2"])
 
     assert config.run_set_model(path) == 0
 
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["model"] == "claude-haiku-4-5"
+    assert saved["provider"] == "anthropic"
     for key, value in original.items():
         if key == "model":
             continue
@@ -577,7 +667,7 @@ def test_set_model_refuses_when_no_config_exists(tmp_path, capsys):
 def _existing_config():
     return {
         "region": {"left": 50, "top": 60, "width": 400, "height": 300},
-        "anthropic_api_key": "old-key",
+        "api_key": "old-key",
         "telegram_bot_token": "old-token",
         "telegram_chat_id": "old-chat",
         "save_dir": "/keep/me",
@@ -666,15 +756,14 @@ def test_single_field_setters_refuse_when_no_config_exists(tmp_path, capsys, set
 # --------------------------------------------------------------------------- #
 
 
-def test_show_prints_every_field_and_masks_credentials(tmp_path, capsys, monkeypatch):
+def test_show_prints_every_field_and_masks_credentials(tmp_path, capsys):
     path = tmp_path / "config.json"
     payload = _existing_config()
-    payload["anthropic_api_key"] = "sk-ant-a-very-long-secret-key-value"
+    payload["api_key"] = "sk-ant-a-very-long-secret-key-value"
     payload["telegram_bot_token"] = "123456:ABCDEFGHIJKLMNOP"
     payload["telegram_chat_id"] = "9876543210"
     payload["prompts"] = {"log": "find errors", "table": "csv please"}
     path.write_text(json.dumps(payload), encoding="utf-8")
-    monkeypatch.delenv(config.ENV_API_KEY, raising=False)
 
     assert config.run_show(path) == 0
     out = capsys.readouterr().out
@@ -683,11 +772,12 @@ def test_show_prints_every_field_and_masks_credentials(tmp_path, capsys, monkeyp
     for label in (
         "Region:",
         "Dwell:",
+        "Provider:",
         "Model:",
         "Default prompt:",
         "Prompt presets:",
         "Save directory:",
-        "Anthropic key:",
+        "API key:",
         "Telegram bot:",
         "Telegram chat:",
     ):
@@ -700,15 +790,102 @@ def test_show_prints_every_field_and_masks_credentials(tmp_path, capsys, monkeyp
     assert "9876543210" not in out
 
 
-def test_show_notes_when_env_key_overrides_the_file(tmp_path, capsys, monkeypatch):
+def test_show_migrates_legacy_anthropic_api_key_for_display(tmp_path, capsys):
+    """A legacy config with only anthropic_api_key still shows a masked API
+    key line — merge_defaults migrates it into api_key on read."""
     path = tmp_path / "config.json"
-    path.write_text(json.dumps(_existing_config()), encoding="utf-8")
-    monkeypatch.setenv(config.ENV_API_KEY, "sk-ant-env-overriding-value")
+    payload = _existing_config()
+    del payload["api_key"]
+    payload["anthropic_api_key"] = "sk-ant-legacy-full-secret"
+    path.write_text(json.dumps(payload), encoding="utf-8")
 
     assert config.run_show(path) == 0
     out = capsys.readouterr().out
-    assert config.ENV_API_KEY in out
-    assert "wins over the file" in out
+    assert "API key:" in out
+    assert "sk-ant-legacy-full-secret" not in out
+    # First eight characters (mask policy) still visible.
+    assert "sk-ant-l" in out
+
+
+def test_show_reports_a_hand_edited_unknown_provider_as_a_config_error(tmp_path, capsys):
+    """A user who edits the config to `provider: "typo"` must see a crisp
+    'Unknown provider' message, not the last-resort "Unexpected error:
+    KeyError" that get_provider() would otherwise raise."""
+    path = tmp_path / "config.json"
+    payload = _existing_config()
+    payload["provider"] = "not-a-real-provider"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert config.run_show(path) == 1
+    err = capsys.readouterr().err
+    assert "Unknown provider" in err
+    assert "not-a-real-provider" in err
+
+
+def test_set_key_reports_a_hand_edited_unknown_provider_as_a_config_error(tmp_path, capsys):
+    path = tmp_path / "config.json"
+    payload = _existing_config()
+    payload["provider"] = "not-a-real-provider"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert config.run_set_key(path) == 1
+    err = capsys.readouterr().err
+    assert "Unknown provider" in err
+
+
+def test_set_key_still_runs_with_openai_compat_missing_base_url(tmp_path, answers, capsys):
+    """A user whose openai_compatible config is missing base_url must still
+    be able to reach the API-key prompt without first fixing base_url — the
+    up-front check gates only on unknown provider names, not on the full
+    validator. The tail-validate still refuses to save until base_url is
+    populated, but by then the user has learned exactly what remains
+    broken (rather than being told to run --model when they tried to
+    run --key)."""
+    scripted, used = answers
+    path = tmp_path / "config.json"
+    payload = _existing_config()
+    payload["provider"] = "openai_compatible"
+    payload["base_url"] = ""  # deliberately broken
+    payload["model"] = "deepseek-vl2"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    scripted.append("sk-new-key")
+
+    result = config.run_set_key(path)
+
+    # Setter reached the input prompt (the "sk-new-key" answer was consumed);
+    # if the up-front check had aborted, no input() call would have happened.
+    assert scripted == []
+    assert used, "setter aborted before prompting for the key"
+
+    # Tail-validate refuses the save because base_url is still empty, so
+    # the file on disk is unchanged — the key the user just typed does
+    # not land in a config that would still route captures nowhere.
+    assert result == 1
+    on_disk = json.loads(path.read_text(encoding="utf-8"))
+    assert on_disk["api_key"] == "old-key"
+    # The failure message names the field that is still wrong so the user
+    # knows to run --model next.
+    assert "base_url" in capsys.readouterr().err
+
+
+def test_set_model_still_runs_with_openai_compat_missing_base_url(tmp_path, answers):
+    """Same as the --key case: --model must be reachable when it is the
+    tool the user needs to fix a missing base_url."""
+    scripted, _ = answers
+    path = tmp_path / "config.json"
+    payload = _existing_config()
+    payload["provider"] = "openai_compatible"
+    payload["base_url"] = ""
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    # provider: keep current (openai_compatible is index 4 out of 4 known)
+    # then pick preset "1" for the compat-endpoint prompt (DeepSeek).
+    scripted.extend(["4", "1"])
+
+    assert config.run_set_model(path) == 0
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["provider"] == "openai_compatible"
+    assert saved["base_url"]  # now populated by the preset
+    assert saved["model"]
 
 
 def test_show_refuses_when_no_config_exists(tmp_path, capsys):
@@ -730,7 +907,7 @@ def test_set_region_clears_a_stale_monitor_when_enumeration_fails(tmp_path, monk
             {
                 "region": {"left": 0, "top": 0, "width": 100, "height": 100},
                 "monitor": {"index": 1, "of": 2},
-                "anthropic_api_key": "k",
+                "api_key": "k",
             }
         ),
         encoding="utf-8",

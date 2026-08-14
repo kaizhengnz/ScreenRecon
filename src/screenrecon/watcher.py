@@ -8,7 +8,9 @@ from typing import Any
 
 from . import capture, display, notify, outline, platform, storage, ui, vision
 
-CREDENTIAL_KEYS = ("anthropic_api_key", "telegram_bot_token", "telegram_chat_id")
+CREDENTIAL_KEYS = ("api_key", "anthropic_api_key", "telegram_bot_token", "telegram_chat_id")
+"""Fields to scrub from third-party error text. ``anthropic_api_key`` is kept
+for the SR-23 migration window: legacy configs still carry it on disk."""
 
 POLL_INTERVAL = 0.1
 """Polling period in seconds. NFR-1 requires <= 200 ms."""
@@ -174,8 +176,7 @@ def handle_trigger(cfg: Mapping[str, Any], prompt: str) -> bool:
     ui.rule(time.strftime("%H:%M:%S"))
     api_start = time.monotonic()
     reply = vision.ask_streaming(
-        str(cfg["anthropic_api_key"]),
-        str(cfg["model"]),
+        cfg,
         [vision.user_turn(api_jpeg, prompt)],
         lambda chunk: print(chunk, end="", flush=True),
     )
@@ -322,10 +323,8 @@ def run_ask(cfg: Mapping[str, Any], question: str | None) -> int:
     except (OSError, RuntimeError) as exc:
         ui.warn(f"Save directory unusable ({cfg['save_dir']}): {exc}")
 
-    api_key = str(cfg["anthropic_api_key"])
-    model = str(cfg["model"])
     one_shot = bool(question)
-    messages: list[dict[str, Any]] = []
+    turns: list[vision.Turn] = []
     transcript: list[str] = []
     first = True
     failed = False
@@ -343,11 +342,11 @@ def run_ask(cfg: Mapping[str, Any], question: str | None) -> int:
             if not current:
                 break
 
-        messages.append(vision.user_turn(api_jpeg if first else None, current))
+        turns.append(vision.user_turn(api_jpeg if first else None, current))
         first = False
         ui.rule("Answer")
         reply = vision.ask_streaming(
-            api_key, model, messages,
+            cfg, turns,
             lambda chunk: print(chunk, end="", flush=True),
         )
         if reply.ok:
@@ -356,11 +355,11 @@ def run_ask(cfg: Mapping[str, Any], question: str | None) -> int:
         else:
             ui.error(reply.text)
             failed = True
-            messages.pop()  # a failed turn does not enter the conversation history
+            turns.pop()  # a failed turn does not enter the conversation history
             break
         if one_shot:
             break
-        messages.append({"role": "assistant", "content": [{"type": "text", "text": reply.text}]})
+        turns.append(vision.assistant_turn(reply.text))
 
     if transcript and saved_image is not None and directory is not None and stem:
         storage.save_txt(directory, stem, "\n\n".join(transcript))

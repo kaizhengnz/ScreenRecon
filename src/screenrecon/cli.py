@@ -17,7 +17,7 @@ examples:
   screenrecon --configure         first-time interactive setup (drag-to-select picker)
   screenrecon --show              print the current config (credentials masked)
   screenrecon --screen            re-pick just the watched region
-  screenrecon --key               change just the Anthropic API key
+  screenrecon --key               change just the API key (for the current provider)
   screenrecon --model             change just the AI model
   screenrecon --prompt            change just the default prompt
   screenrecon --dwell             change just the dwell seconds
@@ -52,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--key",
         action="store_true",
-        help="prompt for a new Anthropic API key only (all other config fields are left alone)",
+        help="prompt for a new API key for the current provider (all other fields are left alone)",
     )
     parser.add_argument(
         "--model",
@@ -130,8 +130,19 @@ def _configure_stdio() -> None:
             pass
 
 
-def _warn_about_redirected_endpoint() -> None:
-    """Make a non-default API endpoint visible — screenshots and the key go there."""
+def _warn_about_redirected_endpoint(cfg: dict[str, object]) -> None:
+    """Warn when the Anthropic SDK's env-var endpoint override is set.
+
+    Only meaningful when the selected provider is Anthropic — the SDK reads
+    ``ANTHROPIC_BASE_URL`` regardless of what we do, and captures + key end
+    up somewhere other than ``api.anthropic.com``. Other providers have
+    their own env-var conventions (or, for the openai_compatible path, the
+    explicit ``base_url`` config field is already visible in ``--show``).
+    """
+    from . import vision
+
+    if vision.get_provider(cfg).name != "anthropic":
+        return
     base_url = os.environ.get("ANTHROPIC_BASE_URL", "").strip()
     if base_url:
         ui.warn(
@@ -204,7 +215,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Resolved for every path that reaches the API, so an unknown --mode is
         # always an error rather than a silently ignored flag.
         prompt = config.resolve_prompt(cfg, args.mode)
-        _warn_about_redirected_endpoint()
+        _warn_about_redirected_endpoint(cfg)
 
         if args.command == "ask":
             # With --mode but no question, the preset is the question.

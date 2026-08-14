@@ -17,6 +17,7 @@
 | **0.1.1** | 2026-08-13 | English | §7 rewritten: release flow moves from a single direct-push workflow to a two-workflow PR-based flow (`release_pr.yml` opens a release PR with auto-merge; `release_auto.yml` runs test / build / tag / publish on the merge commit). Motivated by branch-protection alignment — `github-actions[bot]` cannot bypass rulesets, so bumps must land via PR like every other change. |
 | **0.1.2** | 2026-08-14 | English | Drag-to-select region picker replaces the `--show-cursor` + manual-entry flow (SR-2). New §5.9 documents the tkinter overlay and its test seam. FR-12 restated in terms of the picker; §3.3 no longer lists a graphical picker as out of scope. `--show-cursor` was removed from the CLI; users on the old flag get a one-line hint pointing at `--configure`. Multi-monitor: the overlay spans the virtual desktop, and `platform.enumerate_monitors()` / `find_monitor_containing()` power the Esc-fallback centring on whichever monitor holds the cursor. |
 | **0.1.3** | 2026-08-14 | English | Refactor pass (SR-7): monitor / virtual-desktop / mss code split out of `platform.py` into a new `display.py`, so the cursor path no longer implicitly depends on mss. Picker fallback orchestration hoisted into `picker.pick_region_or_default(current, factory)` — the wizard now delegates one call and no longer knows the picker's internals. Robustness: Tk callback exceptions captured via `report_callback_exception`, `root.destroy` deferred with `after_idle` (macOS focus fix), zero-area click prints a distinguishing notice, and mss shim uses `hasattr`. New §5.10 documents `display.py`. |
+| **0.1.6** | 2026-08-14 | English | Multi-provider support (SR-23). `vision.py` becomes a thin dispatcher owning `Turn` (provider-agnostic conversation unit), `Reply`, and the `Provider` protocol; `get_provider(cfg)` picks by explicit `cfg["provider"]` or by model-name prefix (`claude-*` → Anthropic, `gpt-*` / `o*` → OpenAI, `gemini-*` → Google), defaulting to Anthropic for unknown prefixes so pre-existing configs keep working. Four provider implementations under a new `providers/` sub-package: `anthropic.py` (existing behaviour moved behind the protocol), `openai.py` (GPT via Chat Completions), `google.py` (Gemini via `google-genai`), and `openai_compatible.py` (subclass of the OpenAI provider that requires `base_url` — the shared code path for DeepSeek, Moonshot / Kimi, and Doubao, with `COMPAT_PRESETS` shipping the three verified base URLs and suggested vision models). Each new provider is behind its own optional extra: `pip install screenrecon[openai]` / `[google]` / `[all]`; missing SDK errors quote the exact install command. Config schema: new `api_key` / `provider` / `base_url` fields; legacy `anthropic_api_key` migrates into `api_key` on read and is stripped from the file on the next save. `ANTHROPIC_API_KEY` environment override is removed — the config file is the single source of truth (breaking change; users upgrading from 0.1.5 run `screenrecon --key` once). Wizard step 3 becomes two-step: pick a provider first, then pick a model from that provider's curated shortlist (or type any custom ID); the OpenAI-compatible path also collects a base-URL preset or a custom URL. `--model` follows the same shape; `--key` writes to the generic `api_key` field so a user who just switched providers runs it next without remembering which key type applies. `MODEL_CHOICES_BY_PROVIDER` and `COMPAT_PRESETS` replace the flat `MODEL_CHOICES` list. `run_show` labels the credential line "API key" and prints the provider display name + `base_url` (when relevant). `validate_config` rejects unknown provider names and requires `base_url` when `provider == "openai_compatible"`. |
 | **0.1.5** | 2026-08-14 | English | Windows multi-monitor DPI fix (SR-20): `platform.ensure_dpi_awareness()` now prefers per-monitor DPI aware v2 (`SetProcessDpiAwarenessContext(-4)`), falling through to v1 / system awareness on older Windows or manifest-pinned processes. Under v1 the picker's fullscreen overlay spanning mixed-DPI monitors received mouse events in the primary monitor's logical coordinate space instead of physical pixels, so `event.x_root/y_root` disagreed with mss's physical-pixel space — the saved region landed on the wrong monitor and mss then captured the wrong rectangle. New `--debug` flag (watch mode only): draws a persistent red 3px outline around the watched region so users can visually verify it matches their intent. Implemented as four thin borderless always-on-top Tk edge windows sitting just outside the capture rectangle — the region interior has no window over it, so clicks pass through naturally without needing platform-specific click-through APIs. New module `outline.py`; see §5.11. New `--screen` flag: re-picks just the watched region via the same picker as the wizard, rewriting only the `region` field of an existing config so credentials / prompts / model / dwell / save_dir are untouched (`config.run_set_region`). The watch banner's "Region:" line now appends `(on monitor N of M)` for the same reason `--configure`'s current-region line already did. The picker computes the monitor at pick time and `--configure` / `--screen` persist it as a new top-level `monitor: {"index", "of"}` config field, so the watcher displays exactly what the user chose without recomputing — the annotation cannot drift as monitors are plugged / unplugged or as `mss` reports them differently across DPI-awareness contexts (the SR-20 class of confusion). Old configs without the field fall back to a live compute that picks the containing monitor, or the nearest by squared distance when the centre lies outside every monitor. New helpers in `display.py`: `resolve_monitor_info` (compute), `format_monitor_info` (render). The separate `capture.check_region` warning still covers the "captures will be blank" diagnostic when the region is genuinely off the desktop. Removed the `--show-cursor` deprecation guard (dead code from 0.1.2); argparse's `unrecognized arguments` is enough three releases on. New targeted setters `--key`, `--model`, `--prompt`, `--dwell`, `--save-dir`, and `--telegram` follow the same shape as `--screen` — each opens the wizard's prompt for one field, saves, exits, refuses without an existing config, mutually exclusive; together they cover every field the wizard writes so a small change never forces a full wizard re-run. `--telegram` is the one bundled pair (bot token + chat ID) because they must move together. New `config.run_set_*` helpers share `_run_single_field_setter`. Read-only companion `--show` (`config.run_show`) prints the current config with credentials masked via `ui.mask`, so a user can see what is set without opening the JSON file or re-running the wizard. Archive and API upload both switch from PNG to JPEG (quality 90) — files become `.jpg`, `capture.to_jpeg_bytes` replaces `to_png_bytes`, `storage.save_jpeg` replaces `save_png`, telegram send and vision `image_block` use `image/jpeg`; `storage.new_stem` still checks `.png` alongside `.jpg` so pre-0.1.5 archives in the same directory do not collide. Watch loop and interactive `ask` now stream the model's response — new `vision.ask_streaming(api_key, model, messages, on_delta)` uses `client.messages.stream()`, calls the callback per text chunk, and returns the accumulated text as a `Reply` (same error handling as `ask`). Time-to-first-token replaces total-time as the perceived latency. |
 
 ---
@@ -59,7 +60,7 @@ Wayland is explicitly unsupported — see [§5.2](#52-cursor-position-platformpy
 | Region | A user-defined screen rectangle: `{left, top, width, height}` |
 | Dwell | The continuous time the cursor remains inside the region |
 | Armed | The state in which the trigger can fire. Firing disarms it; the trigger re-arms once the cursor leaves the region |
-| BYOK | Bring Your Own Key — the user configures their own Anthropic API key |
+| BYOK | Bring Your Own Key — the user configures their own AI provider API key |
 
 > **Coordinate space.** v1.0 specified "logical pixels". That turned out to be
 > the wrong commitment — see [§5.2](#52-cursor-position-platformpy). The
@@ -77,7 +78,7 @@ Wayland is explicitly unsupported — see [§5.2](#52-cursor-position-platformpy
 | ID | Requirement | Priority |
 |---|---|---|
 | FR-1 | The user can configure the watched region (left/top/width/height) | P0 |
-| FR-2 | The user can configure an Anthropic API key | P0 |
+| FR-2 | The user can configure an AI provider API key (Anthropic, OpenAI, Gemini, or an OpenAI-compatible endpoint) | P0 |
 | FR-3 | The user can configure a Telegram bot token and chat ID (both mandatory) | P0 |
 | FR-4 | The user can configure the local archive directory | P0 |
 | FR-5 | A capture fires automatically after the cursor dwells in the region for N seconds (default 3, configurable) | P0 |
@@ -90,7 +91,7 @@ Wayland is explicitly unsupported — see [§5.2](#52-cursor-position-platformpy
 | FR-12 | The wizard's region step uses an interactive drag-to-select picker (multi-monitor aware); Esc falls back to a 640×480 region centred on the current monitor | P1 |
 | FR-13 | Prompt presets: a built-in default plus user-defined named prompts, selected with `--mode <name>` | P1 |
 | FR-14 | An `ask` subcommand captures once and answers questions about that screenshot | P2 |
-| FR-15 | The `ANTHROPIC_API_KEY` environment variable overrides the key in the config file | P2 |
+| ~~FR-15~~ | ~~The `ANTHROPIC_API_KEY` environment variable overrides the key in the config file~~ (removed in 0.1.6; the config file is the single source of truth) | — |
 
 All fifteen are implemented. FR-12 was originally a `--show-cursor` coordinate-reader helper; the drag-to-select picker replaces it and `--show-cursor` was removed in 0.1.2.
 
@@ -282,38 +283,45 @@ overrides the check for an all-X11 application stack.
   with LANCZOS before upload, because the vision models resize larger images
   anyway. The local archive keeps the full-resolution image.
 
-### 5.4 AI call (`vision.py`)
+### 5.4 AI call (`vision.py` + `providers/`)
 
-- SDK: the official `anthropic` Python SDK, floor `>=0.104` (the first version
-  whose `messages.create` accepts `output_config`).
-- Model: config field `model`, default `claude-haiku-4-5`. `claude-opus-5` is
-  documented as the higher-accuracy alternative for complex scenes.
-- Request: a single user message whose content is
-  `[image(base64 PNG), text(prompt)]`, with `output_config={"effort": "low"}`.
-  Reading a screenshot is a light task, and low effort keeps latency and cost
-  down. A model that rejects the parameter is detected once and downgraded
-  automatically, covering both the API's 400 and the `TypeError` an older SDK
-  raises.
-- `max_tokens: 4096`. This cap covers thinking *plus* the visible answer on
-  current models, so a tighter budget can be spent entirely on thinking and
-  return no text at all.
-- Response: the concatenation of every `type == "text"` content block.
+`vision.py` is a thin dispatcher. The heavy lifting lives under
+`providers/`, one file per back-end. The shape is:
 
-Error translation (NFR-2):
+- `Turn(role, text, image=None)` — provider-agnostic conversation unit.
+- `Reply(ok, text)` — outcome of any call; `ok=False` carries a readable
+  error string. **Every provider returns a `Reply`, never raises**, so the
+  watch loop keeps running (NFR-2).
+- `Provider` protocol — `ask_streaming(cfg, turns, on_delta) -> Reply`,
+  `verify_key(cfg) -> (ok, message)`.
+- `get_provider(cfg)` — picks by explicit `cfg["provider"]` or model-name
+  prefix (`claude-*` → Anthropic, `gpt-*` / `o*` → OpenAI, `gemini-*` →
+  Google), defaulting to Anthropic for unknown prefixes so pre-refactor
+  configs keep working. `openai_compatible` is never inferred; it must be
+  set explicitly with a `base_url`.
 
-| SDK exception | Message |
-|---|---|
-| `AuthenticationError` | The API key is invalid or revoked. Run `screenrecon --configure` to set it again. |
-| `PermissionDeniedError` | This API key is not allowed to access that resource. |
-| `RateLimitError` | Too many requests. Please try again shortly. |
-| `NotFoundError` | Model or endpoint not found. Check the `model` field in your config. |
-| `APIStatusError` | The AI API returned `{code}`. Check your account credit or retry later. |
-| `APITimeoutError` | The AI API request timed out. |
-| `APIConnectionError` | Network connection failed. |
+Providers:
 
-Empty responses are also classified, by `stop_reason`, into a refusal, an
-output-limit truncation, or an unexplained empty answer. **Every failure is
-returned as a message rather than raised**, so the main loop continues.
+| Name | SDK | Extra | Notes |
+|---|---|---|---|
+| `anthropic` | `anthropic` | (core) | Streams via `client.messages.stream()`; probes `output_config.effort`, drops it on 400 / `TypeError`. |
+| `openai` | `openai` | `screenrecon[openai]` | Chat Completions with `stream=True`; image parts use `image_url` data URLs. |
+| `google` | `google-genai` | `screenrecon[google]` | `client.models.generate_content_stream()`; assistant turns use `role="model"`; image is a `Part.from_bytes`. |
+| `openai_compatible` | `openai` (reused) | `screenrecon[openai]` | Subclass of the OpenAI provider that requires `base_url`. Shared code path for DeepSeek, Moonshot / Kimi, Doubao; `config.COMPAT_PRESETS` ships verified endpoints + suggested vision models. |
+
+Common request contract: one user turn per capture — content is
+`[image (JPEG), text (prompt)]` translated into each SDK's format —
+`max_tokens: 4096` (enough for OCR / short-description output on all
+providers), streaming enabled so time-to-first-token replaces total-time
+as the perceived latency.
+
+Error translation (NFR-2) is per provider: each `translate_error(exc)`
+maps that SDK's exception classes (auth / rate-limit / not-found /
+status / timeout / connection) into a readable message; the fall-through
+scrubs the raw exception through `ui.scrub` to strip any credential the
+third party embedded. Empty responses are also classified, by
+`stop_reason`, into a refusal, an output-limit truncation, or an
+unexplained empty answer.
 
 ### 5.5 Telegram delivery (`notify.py`)
 
@@ -360,7 +368,10 @@ otherwise `~/.config/screenrecon/config.json`.
 ```json
 {
   "region": {"left": 100, "top": 100, "width": 600, "height": 400},
-  "anthropic_api_key": "sk-ant-...",
+  "provider": "anthropic",
+  "model": "claude-haiku-4-5",
+  "api_key": "sk-ant-...",
+  "base_url": "",
   "telegram_bot_token": "123456:ABC-...",
   "telegram_chat_id": "123456789",
   "save_dir": "~/ScreenRecon",
@@ -368,17 +379,24 @@ otherwise `~/.config/screenrecon/config.json`.
   "prompts": {
     "log": "Find the error messages in this screenshot and explain the likely cause."
   },
-  "dwell_seconds": 3,
-  "model": "claude-haiku-4-5"
+  "dwell_seconds": 3
 }
 ```
 
 Rules:
 
 - Merged with defaults on load; `region` and `prompts` merge one level deep.
-- Startup is refused if any of the three credentials is empty, pointing the user
-  at `--configure`.
-- `ANTHROPIC_API_KEY` takes precedence over the file (FR-15).
+- Startup is refused if any of the three credentials (`api_key`,
+  `telegram_bot_token`, `telegram_chat_id`) is empty, pointing the user at
+  `--configure`.
+- **The config file is the single source of truth** — SR-23 removed the
+  `ANTHROPIC_API_KEY` environment override so credentials do not depend on
+  the shell they were started from. Legacy 0.1.5 configs carrying
+  `anthropic_api_key` are migrated to `api_key` on load and stripped from
+  the file on the next save; the migration is one-way.
+- `provider` is optional. When empty, the dispatcher infers from the
+  model-name prefix. When set to `openai_compatible`, `base_url` must also
+  be set — `validate_config` refuses to load a config that violates this.
 - Validation: `dwell_seconds > 0`; `region.width`/`height` positive integers;
   errors name the specific field. **`left` and `top` may be negative** —
   monitors positioned left of or above the primary display have negative
@@ -396,24 +414,35 @@ Rules:
 
 **Setup wizard (`--configure`)**: asks for each field, Enter keeps the current
 value, then verifies both sets of credentials online. Verification failure still
-saves, with a warning. Credentials are read with `getpass`, so the typed value
-never reaches the terminal, shell history, or a screenshot ScreenRecon itself
-takes. No input loop can run unbounded: closed stdin aborts cleanly, and
-repeated invalid answers give up.
+saves, with a warning. Credentials echo during typing — earlier releases used
+`getpass` but hiding characters broke paste on Windows and left the user
+unsure whether their input had landed, so the wizard now uses plain `input()`
+and instead masks the *hint* (the current value shown in `[brackets]`) and the
+*echo* of the accepted value (`sk-ant-a... (108 chars)`). NFR-3 still applies
+at runtime: the watch loop, logs, and tracebacks never quote a secret. No
+input loop can run unbounded: closed stdin aborts cleanly, and repeated
+invalid answers give up.
 
 The wizard is six steps: **1) Watched region**, **2) Trigger** (with an
-explanation of dwell semantics and re-arm), **3) AI model**, **4) Default
-prompt**, **5) Credentials**, **6) Local archive**. The intro banner
-tells the user Enter keeps the current value and Ctrl+C aborts without saving
-— useful given six steps and no way to know how many are left.
+explanation of dwell semantics and re-arm), **3) AI provider and model**,
+**4) Default prompt**, **5) Credentials**, **6) Local archive**. The intro
+banner tells the user Enter keeps the current value and Ctrl+C aborts without
+saving — useful given six steps and no way to know how many are left.
 
-Both the **AI model** and **Default prompt** fields use numbered choices via
-`_ask_choice`. Presets are `(label, value, note)` triples so the numbered list
-can show a short synonym (e.g. `describe`) while `_ask_choice` still stores
-the underlying value (the full prompt string). The current value is appended
-as the final option so the prompt hint `[N+1]` always maps "Enter" to "keep
-current". Typing a non-numeric string is accepted as a custom value so future
-models or hand-tuned prompts work without a wizard update.
+Step 3 is itself two prompts (`_prompt_provider_and_model`): first pick a
+provider from the sorted list of registered providers, then pick a model
+from that provider's shortlist (`MODEL_CHOICES_BY_PROVIDER`). For the
+`openai_compatible` provider the flow inserts a base-URL preset picker
+(`_prompt_compat_endpoint`) — a numbered preset (`deepseek` / `kimi` /
+`doubao`) pre-fills both `base_url` and a matching vision model in one step;
+typing a custom URL leaves the model prompt to the caller. **Default prompt**
+uses the same numbered-choice pattern. Presets are `(label, value, note)`
+triples so the numbered list can show a short synonym (e.g. `describe`)
+while `_ask_choice` still stores the underlying value. The current value
+is appended as the final option so the prompt hint `[N+1]` always maps
+"Enter" to "keep current". Typing a non-numeric string is accepted as a
+custom value so future models or hand-tuned prompts work without a wizard
+update.
 
 The **Watched region** step's "Current" line and the picker's "Picked" line
 both append `(on monitor N of M)` when the region's centre lies on a known
@@ -426,7 +455,7 @@ glance which display their region belongs to.
 screenrecon                     read config, enter the watch loop
 screenrecon --configure         interactive setup wizard (opens the drag picker)
 screenrecon --screen            re-pick just the watched region, leave everything else
-screenrecon --key               prompt for a new Anthropic API key only
+screenrecon --key               prompt for a new API key (for the current provider) only
 screenrecon --model             pick a new AI model only
 screenrecon --prompt            pick a new default prompt only
 screenrecon --dwell             set dwell seconds only

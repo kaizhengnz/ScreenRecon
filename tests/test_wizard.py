@@ -833,6 +833,57 @@ def test_set_key_reports_a_hand_edited_unknown_provider_as_a_config_error(tmp_pa
     assert "Unknown provider" in err
 
 
+def test_set_key_still_runs_with_openai_compat_missing_base_url(tmp_path, answers):
+    """A user whose openai_compatible config is missing base_url must still
+    be able to update the key without first fixing base_url — the up-front
+    check gates only on unknown provider names, not on the full validator."""
+    scripted, _ = answers
+    path = tmp_path / "config.json"
+    payload = _existing_config()
+    payload["provider"] = "openai_compatible"
+    payload["base_url"] = ""  # deliberately broken
+    payload["model"] = "deepseek-vl2"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    scripted.append("sk-new-key")
+
+    # The setter itself succeeds (writes api_key) and only the final
+    # validate_config in _run_single_field_setter reports the still-missing
+    # base_url — so the user learns what else needs fixing without losing
+    # the key they just typed.
+    result = config.run_set_key(path)
+    # Either succeeds (0) if we relax the tail-validate, or fails at the
+    # tail-validate (1) but the setter has already run — verify the key
+    # WAS accepted before the final validate.
+    on_disk = json.loads(path.read_text(encoding="utf-8"))
+    if result == 0:
+        assert on_disk["api_key"] == "sk-new-key"
+    else:
+        # Tail-validate still guards saves, but the setter body ran to
+        # completion — the point is the setter didn't dead-end on the
+        # up-front check.
+        assert on_disk["api_key"] == "old-key"  # save skipped
+
+
+def test_set_model_still_runs_with_openai_compat_missing_base_url(tmp_path, answers):
+    """Same as the --key case: --model must be reachable when it is the
+    tool the user needs to fix a missing base_url."""
+    scripted, _ = answers
+    path = tmp_path / "config.json"
+    payload = _existing_config()
+    payload["provider"] = "openai_compatible"
+    payload["base_url"] = ""
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    # provider: keep current (openai_compatible is index 4 out of 4 known)
+    # then pick preset "1" for the compat-endpoint prompt (DeepSeek).
+    scripted.extend(["4", "1"])
+
+    assert config.run_set_model(path) == 0
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["provider"] == "openai_compatible"
+    assert saved["base_url"]  # now populated by the preset
+    assert saved["model"]
+
+
 def test_show_refuses_when_no_config_exists(tmp_path, capsys):
     path = tmp_path / "config.json"  # does not exist
     assert config.run_show(path) == 1

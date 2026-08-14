@@ -704,12 +704,18 @@ def run_set_key(path: str | os.PathLike[str] | None = None) -> int:
 
     def setter(raw: dict[str, Any]) -> None:
         # Pass a fresh merged view so provider inference sees the migrated
-        # api_key; the write below still goes to `raw`. Validate first so a
-        # hand-edited unknown provider surfaces as a crisp ConfigError
-        # rather than a KeyError from get_provider().
+        # api_key; the write below still goes to `raw`. Translate the
+        # dispatcher's KeyError on an unknown provider name into a
+        # ConfigError so hand-edited configs get a crisp message instead
+        # of the last-resort "Unexpected error" banner. Deliberately does
+        # not run the full validate_config — a missing `base_url` for
+        # openai_compatible is a "fix me now" case that --key should still
+        # let the user through so they can update the key alongside.
         merged = merge_defaults(raw)
-        validate_config(merged)
-        provider = _vision.get_provider(merged)
+        try:
+            provider = _vision.get_provider(merged)
+        except KeyError as exc:
+            raise ConfigError(str(exc)) from None
         ui.info(f"  Provider: {provider.display_name}")
         current = raw.get("api_key") or raw.get(LEGACY_API_KEY_FIELD) or ""
         raw["api_key"] = _ask("  API key", current, secret=True)
@@ -726,11 +732,18 @@ def run_set_model(path: str | os.PathLike[str] | None = None) -> int:
     Leaves every other config field alone. The api_key is left intact — the
     user runs ``--key`` next to update it for the new provider.
     """
+    from . import vision as _vision
+
     def setter(raw: dict[str, Any]) -> None:
-        # Validate first so a hand-edited unknown provider surfaces as a
-        # crisp ConfigError rather than a KeyError from get_provider()
-        # inside _prompt_provider_and_model. Mirrors run_set_key.
-        validate_config(merge_defaults(raw))
+        # Translate the dispatcher's KeyError on an unknown provider name
+        # into a ConfigError so hand-edited configs get a crisp message.
+        # Mirrors run_set_key — deliberately does not run full
+        # validate_config, so an openai_compatible config with a missing
+        # base_url can still be fixed via this exact flow.
+        try:
+            _vision.get_provider(merge_defaults(raw))
+        except KeyError as exc:
+            raise ConfigError(str(exc)) from None
         _prompt_provider_and_model(raw)
 
     return _run_single_field_setter(path, "ScreenRecon set model", setter)
@@ -893,13 +906,18 @@ def run_show(path: str | os.PathLike[str] | None = None) -> int:
         return 1
 
     cfg = merge_defaults(raw)
-    # Validate before touching the dispatcher, so a hand-edited unknown
-    # provider surfaces as a crisp ConfigError instead of a KeyError at
-    # get_provider() that the last-resort handler renders as
-    # "Unexpected error: KeyError".
+
+    from . import vision as _vision
+
+    # Translate the dispatcher's KeyError on an unknown provider name into a
+    # crisp ConfigError instead of the "Unexpected error: KeyError" banner
+    # the last-resort handler would produce. Deliberately does not run the
+    # full validate_config — --show is read-only and should still be able to
+    # print a config that is *technically* invalid (e.g. openai_compatible
+    # without base_url) so the user can see what needs fixing.
     try:
-        validate_config(cfg)
-    except ConfigError as exc:
+        provider = _vision.get_provider(cfg)
+    except KeyError as exc:
         ui.error(str(exc))
         return 1
 
@@ -909,10 +927,6 @@ def run_show(path: str | os.PathLike[str] | None = None) -> int:
         display.format_monitor_info(stored_monitor)
         or display.describe_region_monitor(region)
     )
-
-    from . import vision as _vision
-
-    provider = _vision.get_provider(cfg)
 
     ui.rule("ScreenRecon config")
     ui.info(f"Config file: {resolved}")

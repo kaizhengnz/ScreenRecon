@@ -57,11 +57,11 @@ class OpenAIProvider:
             return Reply(False, translate_error(exc, [api_key]))
 
         # OpenAI reasoning models (gpt-5 / o1 / o3 / o4) reject the classic
-        # ``max_tokens`` and require ``max_completion_tokens``; the SDK maps
-        # the newer name for older Chat Completions models too, so sending
-        # ``max_completion_tokens`` unconditionally works across the whole
-        # family. Fall back to ``max_tokens`` only if the SDK is too old to
-        # accept the newer parameter (TypeError from client.create).
+        # ``max_tokens`` and require ``max_completion_tokens``. Added to the
+        # SDK in 1.45; ``pyproject`` pins that as the floor. The TypeError
+        # fallback below covers a user who somehow ended up with 1.40-1.44
+        # installed (an old venv layered under this package) — same
+        # probe-and-retry shape AnthropicProvider uses for ``output_config``.
         request = {
             "model": model,
             "messages": _messages_from_turns(turns),

@@ -401,6 +401,8 @@ def _ask_choice(
     label: str,
     presets: list[tuple[str, str, str]],
     current: str,
+    *,
+    default: str | None = None,
 ) -> str:
     """Present ``presets`` as numbered options 1..N, with ``current`` as option N+1.
 
@@ -410,20 +412,27 @@ def _ask_choice(
     the label equals the value; for a prompt whose text is long the label is a
     short synonym (e.g. ``"describe"`` for a full sentence prompt).
 
-    Behaviour:
-
-    - Input a number in ``1..N+1`` → returns that option's value.
-    - Input any non-empty non-numeric text → returned as a custom value (so
-      users can pin a value the wizard does not know about yet).
-    - Enter → keeps ``current`` (the prompt hint is ``[N+1]``; empty answer
-      resolves to that index and therefore to the current value).
+    Enter maps to whichever index the prompt hint shows: by default that is
+    ``N+1`` (keep current), so a user who runs the wizard on an existing config
+    is not surprised. Pass ``default`` (a value that must match one of the
+    preset values) to make Enter select a specific recommended preset instead
+    — used for the AI model, where the shipping recommendation should be what
+    a quick Enter lands on.
 
     Number out of range warns and re-prompts, up to ``MAX_PROMPT_RETRIES``.
+    Non-numeric text is returned verbatim as a custom value.
     """
     current_index = len(presets) + 1
     labels = [preset_label for preset_label, _, _ in presets]
     width = max(len(preset_label) for preset_label in labels) if labels else 0
     current_preview = current if len(current) <= 60 else current[:57] + "..."
+
+    default_index = current_index
+    if default is not None:
+        for index, (_, preset_value, _) in enumerate(presets, start=1):
+            if preset_value == default:
+                default_index = index
+                break
 
     for index, (preset_label, _, note) in enumerate(presets, start=1):
         ui.info(f"    {index}) {preset_label:<{width}}  ({note})")
@@ -432,7 +441,7 @@ def _ask_choice(
     for _ in range(MAX_PROMPT_RETRIES):
         answer = _ask(
             f"    Enter 1-{current_index} or type any {label}",
-            str(current_index),
+            str(default_index),
         ).strip()
         if answer.isdigit():
             number = int(answer)
@@ -539,7 +548,9 @@ def _run_wizard(
     cfg["dwell_seconds"] = _ask_float("  dwell seconds", cfg["dwell_seconds"], minimum=0)
 
     ui.info("\n3) AI model")
-    cfg["model"] = _ask_choice("AI model", MODEL_CHOICES, str(cfg["model"]))
+    cfg["model"] = _ask_choice(
+        "AI model", MODEL_CHOICES, str(cfg["model"]), default=DEFAULT_MODEL
+    )
 
     ui.info("\n4) Default prompt")
     cfg["prompt"] = _ask_choice("default prompt", PROMPT_CHOICES, str(cfg["prompt"]))

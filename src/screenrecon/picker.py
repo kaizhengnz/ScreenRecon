@@ -13,7 +13,8 @@ picker or the cursor cannot be read.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Protocol
+from collections.abc import Callable
+from typing import Any, Protocol
 
 DEFAULT_WIDTH = 640
 DEFAULT_HEIGHT = 480
@@ -239,7 +240,7 @@ def pick_region_or_default(
     - Picker raises :class:`PickerError` (missing tkinter, no display) → warn
       and keep ``current``.
     """
-    from . import display, ui
+    from . import ui
 
     factory = factory or default_picker
     ui.info(

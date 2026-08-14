@@ -401,3 +401,69 @@ def test_wizard_reports_failed_verification_but_still_saves(tmp_path, answers, m
     output = capsys.readouterr().out
     assert "key is invalid" in output
     assert "[warn]" in output
+
+
+# --------------------------------------------------------------------------- #
+# run_set_region — --screen flag
+# --------------------------------------------------------------------------- #
+
+
+def test_set_region_updates_only_the_region_field(tmp_path):
+    """--screen must not touch credentials, prompts, or any other field."""
+    path = tmp_path / "config.json"
+    original = {
+        "region": {"left": 50, "top": 60, "width": 400, "height": 300},
+        "anthropic_api_key": "old-key",
+        "telegram_bot_token": "old-token",
+        "telegram_chat_id": "old-chat",
+        "save_dir": str(tmp_path),
+        "prompt": "keep me",
+        "prompts": {"log": "find errors"},
+        "dwell_seconds": 2.5,
+        "model": "claude-opus-5",
+    }
+    path.write_text(json.dumps(original), encoding="utf-8")
+
+    picked = {"left": 10, "top": 20, "width": 800, "height": 600}
+    assert (
+        config.run_set_region(path, picker_factory=_picker_factory(picked)) == 0
+    )
+
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["region"] == picked
+    # Every other field is untouched, byte-for-byte.
+    for key, value in original.items():
+        if key == "region":
+            continue
+        assert saved[key] == value
+
+
+def test_set_region_refuses_when_no_config_exists(tmp_path, capsys):
+    """--screen is not a first-run flow — the user needs credentials first."""
+    path = tmp_path / "config.json"  # does not exist
+    assert config.run_set_region(path, picker_factory=_picker_factory(None)) == 1
+    err = capsys.readouterr().err
+    assert "--configure" in err
+    assert not path.exists()
+
+
+def test_set_region_keeps_partial_config_partial(tmp_path):
+    """A partial config (some fields missing) must stay partial after --screen —
+    running --screen must not silently pad the file with defaults for fields
+    the user has deliberately not set yet."""
+    path = tmp_path / "config.json"
+    partial = {
+        "region": {"left": 0, "top": 0, "width": 100, "height": 100},
+        "anthropic_api_key": "just-a-key",
+    }
+    path.write_text(json.dumps(partial), encoding="utf-8")
+
+    picked = {"left": 10, "top": 20, "width": 300, "height": 200}
+    assert (
+        config.run_set_region(path, picker_factory=_picker_factory(picked)) == 0
+    )
+
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert set(saved.keys()) == {"region", "anthropic_api_key"}
+    assert saved["region"] == picked
+    assert saved["anthropic_api_key"] == "just-a-key"

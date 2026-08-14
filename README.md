@@ -61,6 +61,7 @@ cursor there will never re-trigger.
 | --- | --- |
 | `screenrecon` | Watch the configured region |
 | `screenrecon --configure` | Interactive setup: drag-to-select region picker, then credentials (verified online) |
+| `screenrecon --screen` | Re-pick just the watched region; every other config field is left alone |
 | `screenrecon --mode NAME` | Watch using the `prompts.NAME` preset instead of the default prompt |
 | `screenrecon ask "question"` | Capture once, answer one question, exit |
 | `screenrecon ask` | Capture once, then keep asking questions about that screenshot |

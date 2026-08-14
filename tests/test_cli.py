@@ -46,6 +46,7 @@ def calls(monkeypatch):
     monkeypatch.setattr(watcher, "run", record_watch)
     monkeypatch.setattr(watcher, "run_ask", lambda cfg, question: record("ask", question))
     monkeypatch.setattr(config, "run_wizard", lambda path: record("wizard", path))
+    monkeypatch.setattr(config, "run_set_region", lambda path: record("set_region", path))
     return recorded
 
 
@@ -75,6 +76,12 @@ def test_configure_runs_the_wizard(config_file, calls):
     assert calls["wizard"] == config_file
 
 
+def test_screen_re_picks_only_the_region(config_file, calls):
+    assert cli.main(["--config", config_file, "--screen"]) == 0
+    assert calls["set_region"] == config_file
+    assert "watch" not in calls
+
+
 def test_ask_passes_the_joined_question(config_file, calls):
     assert cli.main(["--config", config_file, "ask", "what", "is", "this"]) == 0
     assert calls["ask"] == "what is this"
@@ -90,24 +97,6 @@ def test_ask_with_a_mode_uses_the_preset_as_the_question(config_file, calls):
     assert calls["ask"] == "find errors"
 
 
-def test_show_cursor_flag_gets_a_friendly_error(capsys):
-    """--show-cursor was removed; the setup wizard now has a picker. Guide the user."""
-    assert cli.main(["--show-cursor"]) == 2
-    err = capsys.readouterr().err
-    assert "--show-cursor was removed" in err
-    assert "--configure" in err
-
-
-@pytest.mark.parametrize("with_flag", ["--help", "-h", "--version"])
-def test_show_cursor_does_not_hijack_help_or_version(with_flag, capsys):
-    """`--show-cursor --help` must still show help — help/version always work."""
-    with pytest.raises(SystemExit) as excinfo:
-        cli.main(["--show-cursor", with_flag])
-    assert excinfo.value.code == 0
-    err = capsys.readouterr().err
-    assert "--show-cursor was removed" not in err
-
-
 # --------------------------------------------------------------------------- #
 # Rejected combinations
 # --------------------------------------------------------------------------- #
@@ -118,6 +107,10 @@ def test_show_cursor_does_not_hijack_help_or_version(with_flag, capsys):
     [
         ["--configure", "ask", "q"],
         ["--mode", "log", "--configure"],
+        ["--screen", "--configure"],
+        ["--screen", "--debug"],
+        ["--screen", "--mode", "log"],
+        ["--screen", "ask", "q"],
     ],
 )
 def test_conflicting_flags_exit_two(argv):

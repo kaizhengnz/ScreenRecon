@@ -6,7 +6,7 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
-from . import capture, notify, outline, platform, storage, ui, vision
+from . import capture, display, notify, outline, platform, storage, ui, vision
 
 CREDENTIAL_KEYS = ("anthropic_api_key", "telegram_bot_token", "telegram_chat_id")
 
@@ -221,7 +221,10 @@ def run(cfg: Mapping[str, Any], prompt: str, *, debug: bool = False) -> int:
     check_environment(cfg)
 
     ui.rule("ScreenRecon watching")
-    ui.info(f"Region: {_format_region(cfg['region'])}")
+    ui.info(
+        f"Region: {_format_region(cfg['region'])}"
+        + display.describe_region_monitor(cfg["region"])
+    )
     ui.info(f"Fires after {cfg['dwell_seconds']}s dwell | model {cfg['model']}")
     print_destinations(cfg)
     ui.info(f"Prompt: {prompt}")

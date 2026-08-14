@@ -36,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--configure", action="store_true", help="run the interactive setup wizard"
     )
     parser.add_argument(
+        "--screen",
+        action="store_true",
+        help="re-pick just the watched region (all other config fields are left alone)",
+    )
+    parser.add_argument(
         "--mode",
         metavar="NAME",
         help="use the named prompt preset from the 'prompts' config section",
@@ -92,21 +97,6 @@ def _warn_about_redirected_endpoint() -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     _configure_stdio()
-    # Friendly hint for users still running the removed --show-cursor flag from an
-    # older version's muscle memory. argparse would print "unrecognized arguments",
-    # which is technically correct but tells the user nothing about what replaced it.
-    # --help and --version take precedence so the standard "always works" contract holds.
-    raw = list(sys.argv[1:] if argv is None else argv)
-    if "--show-cursor" in raw and not (
-        "--help" in raw or "-h" in raw or "--version" in raw
-    ):
-        print(
-            "screenrecon: --show-cursor was removed. "
-            "Run 'screenrecon --configure' — it now opens a drag-to-select picker.",
-            file=sys.stderr,
-        )
-        return 2
-
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -114,6 +104,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("the 'ask' subcommand cannot be combined with --configure")
     if args.mode and args.configure:
         parser.error("--mode only applies when watching or when using 'ask'")
+    if args.screen and (args.configure or args.command == "ask" or args.mode or args.debug):
+        parser.error("--screen sets only the watched region; use it on its own")
 
     # Imported lazily so that --help and --version never load mss/anthropic.
     from . import platform as cursor_platform
@@ -128,6 +120,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.configure:
             return config.run_wizard(args.config_path)
+        if args.screen:
+            return config.run_set_region(args.config_path)
 
         cfg = config.load(args.config_path)
         config.require_credentials(cfg)

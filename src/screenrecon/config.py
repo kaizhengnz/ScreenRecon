@@ -419,7 +419,8 @@ def _prompt_region(
     Kept intentionally thin — the picker owns the whole "give me a region"
     concern (open, cancel-fallback, PickerError-fallback, monitor reporting).
     """
-    from . import display, picker as picker_module
+    from . import display
+    from . import picker as picker_module
 
     ui.info(
         f"   Current: left={current.get('left')} top={current.get('top')} "
@@ -462,11 +463,65 @@ def run_wizard(
         return 1
 
 
+def run_set_region(
+    path: str | os.PathLike[str] | None = None,
+    *,
+    picker_factory: PickerFactory | None = None,
+) -> int:
+    """Re-pick just the watched region; leave every other config field alone.
+
+    For the "I moved monitors / changed scaling / want to reframe" case, where
+    the full wizard (credentials verification, prompt/model choice, etc.) is
+    overkill. Refuses to run if no config exists yet — the user needs to have
+    gone through `--configure` at least once so credentials are present.
+    """
+    from . import display
+    from . import picker as picker_module
+
+    resolved = config_path(path)
+    raw = read_raw(resolved)
+    if not raw:
+        ui.error(
+            f"No config to update at {resolved}. "
+            "Run 'screenrecon --configure' first to set credentials and save directory."
+        )
+        return 1
+
+    cfg = merge_defaults(raw)
+    ui.rule("ScreenRecon set region")
+    ui.info(f"Config file: {resolved}")
+    ui.info(
+        f"   Current: left={cfg['region'].get('left')} top={cfg['region'].get('top')} "
+        f"width={cfg['region'].get('width')} height={cfg['region'].get('height')}"
+        + display.describe_region_monitor(cfg["region"])
+    )
+    new_region = picker_module.pick_region_or_default(
+        dict(cfg["region"]), picker_factory
+    )
+    raw["region"] = new_region
+
+    try:
+        validate_config(merge_defaults(raw))
+    except ConfigError as exc:
+        ui.error(str(exc))
+        return 1
+
+    try:
+        saved_to = save(raw, resolved)
+    except ConfigError as exc:
+        ui.error(str(exc))
+        return 1
+    ui.rule()
+    ui.info(f"Region saved to {saved_to}")
+    return 0
+
+
 def _run_wizard(
     path: str | os.PathLike[str] | None = None,
     picker_factory: PickerFactory | None = None,
 ) -> int:
-    from . import notify, picker as picker_module, vision  # lazy: --help skips SDK
+    from . import notify, vision  # lazy: --help skips SDK
+    from . import picker as picker_module
 
     resolved = config_path(path)
     raw = read_raw(resolved)

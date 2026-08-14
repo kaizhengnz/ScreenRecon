@@ -17,7 +17,7 @@
 | **0.1.1** | 2026-08-13 | English | §7 rewritten: release flow moves from a single direct-push workflow to a two-workflow PR-based flow (`release_pr.yml` opens a release PR with auto-merge; `release_auto.yml` runs test / build / tag / publish on the merge commit). Motivated by branch-protection alignment — `github-actions[bot]` cannot bypass rulesets, so bumps must land via PR like every other change. |
 | **0.1.2** | 2026-08-14 | English | Drag-to-select region picker replaces the `--show-cursor` + manual-entry flow (SR-2). New §5.9 documents the tkinter overlay and its test seam. FR-12 restated in terms of the picker; §3.3 no longer lists a graphical picker as out of scope. `--show-cursor` was removed from the CLI; users on the old flag get a one-line hint pointing at `--configure`. Multi-monitor: the overlay spans the virtual desktop, and `platform.enumerate_monitors()` / `find_monitor_containing()` power the Esc-fallback centring on whichever monitor holds the cursor. |
 | **0.1.3** | 2026-08-14 | English | Refactor pass (SR-7): monitor / virtual-desktop / mss code split out of `platform.py` into a new `display.py`, so the cursor path no longer implicitly depends on mss. Picker fallback orchestration hoisted into `picker.pick_region_or_default(current, factory)` — the wizard now delegates one call and no longer knows the picker's internals. Robustness: Tk callback exceptions captured via `report_callback_exception`, `root.destroy` deferred with `after_idle` (macOS focus fix), zero-area click prints a distinguishing notice, and mss shim uses `hasattr`. New §5.10 documents `display.py`. |
-| **0.1.5** | 2026-08-14 | English | Windows multi-monitor DPI fix (SR-20): `platform.ensure_dpi_awareness()` now prefers per-monitor DPI aware v2 (`SetProcessDpiAwarenessContext(-4)`), falling through to v1 / system awareness on older Windows or manifest-pinned processes. Under v1 the picker's fullscreen overlay spanning mixed-DPI monitors received mouse events in the primary monitor's logical coordinate space instead of physical pixels, so `event.x_root/y_root` disagreed with mss's physical-pixel space — the saved region landed on the wrong monitor and mss then captured the wrong rectangle. New `--debug` flag (watch mode only): draws a persistent red 3px outline around the watched region so users can visually verify it matches their intent. Implemented as four thin borderless always-on-top Tk edge windows sitting just outside the capture rectangle — the region interior has no window over it, so clicks pass through naturally without needing platform-specific click-through APIs. Best-effort: `open()` warns and no-ops when tkinter is missing or Tk construction fails. New module `outline.py`; see §5.11. |
+| **0.1.5** | 2026-08-14 | English | Windows multi-monitor DPI fix (SR-20): `platform.ensure_dpi_awareness()` now prefers per-monitor DPI aware v2 (`SetProcessDpiAwarenessContext(-4)`), falling through to v1 / system awareness on older Windows or manifest-pinned processes. Under v1 the picker's fullscreen overlay spanning mixed-DPI monitors received mouse events in the primary monitor's logical coordinate space instead of physical pixels, so `event.x_root/y_root` disagreed with mss's physical-pixel space — the saved region landed on the wrong monitor and mss then captured the wrong rectangle. New `--debug` flag (watch mode only): draws a persistent red 3px outline around the watched region so users can visually verify it matches their intent. Implemented as four thin borderless always-on-top Tk edge windows sitting just outside the capture rectangle — the region interior has no window over it, so clicks pass through naturally without needing platform-specific click-through APIs. New module `outline.py`; see §5.11. New `--screen` flag: re-picks just the watched region via the same picker as the wizard, rewriting only the `region` field of an existing config so credentials / prompts / model / dwell / save_dir are untouched (`config.run_set_region`). The watch banner's "Region:" line now appends `(on monitor N of M)` for the same reason `--configure`'s current-region line already did. Removed the `--show-cursor` deprecation guard (dead code from 0.1.2); argparse's `unrecognized arguments` is enough three releases on. |
 
 ---
 
@@ -425,6 +425,8 @@ glance which display their region belongs to.
 ```
 screenrecon                     read config, enter the watch loop
 screenrecon --configure         interactive setup wizard (opens the drag picker)
+screenrecon --screen            re-pick just the watched region, leave everything else
+screenrecon --debug             watch as usual and overlay a red outline on the region
 screenrecon --mode <name>       use prompts.<name> as this run's prompt
 screenrecon ask [question]      capture once and ask about it
 screenrecon --config <path>     use an alternative config file
@@ -435,9 +437,11 @@ Global flags precede the subcommand. `--mode` is resolved on every path that
 reaches the API, so an unknown preset is always an error rather than a silently
 ignored flag; with `ask` and no question, the preset *is* the question.
 
-`--show-cursor` from earlier versions is intercepted with a friendly one-line
-error pointing the user at `--configure`; argparse would otherwise print
-`unrecognized arguments`, which reveals nothing about the replacement flow.
+`--screen` is a targeted re-picker for the region only; it refuses to run if no
+config exists yet (the user needs to have gone through `--configure` at least
+once so credentials are present). Everything except the `region` field is
+preserved byte-for-byte, so a partial config that omits fields the user has not
+set yet stays partial — the flag never silently pads the file with defaults.
 
 Exit codes: 0 success, 1 error (including a failed `ask`), 2 usage error, 130
 interrupted. A final handler catches anything unexpected and prints a scrubbed
@@ -635,7 +639,8 @@ No test touches the network or the screen.
 | Region configured off-screen | Warned at startup rather than silently uploading black images |
 | `--configure` region step, single monitor | Drag opens the overlay, a rectangle draws, release saves the region; Esc falls back to 640×480 centred |
 | `--configure` region step, multi-monitor | Overlay spans every monitor; drag on either monitor yields correct virtual-desktop coordinates and the wizard reports which monitor holds the region |
-| `screenrecon --show-cursor` from muscle memory | Prints a one-line hint pointing at `--configure`, exits 2 |
+| `screenrecon --screen` on an existing config | Opens the picker and rewrites only the `region` field; credentials, prompts, model, dwell, save_dir are untouched |
+| `screenrecon --debug` | Watch starts as usual and a red 3px outline is drawn just outside the region, click-through in the interior; teardown on Ctrl+C |
 
 ### 8.3 Reference implementation
 

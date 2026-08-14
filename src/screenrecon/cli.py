@@ -17,7 +17,7 @@ examples:
   screenrecon --configure         first-time interactive setup (drag-to-select picker)
   screenrecon --show              print the current config (credentials masked)
   screenrecon --screen            re-pick just the watched region
-  screenrecon --key               change just the Anthropic API key
+  screenrecon --key               change just the API key (for the current provider)
   screenrecon --model             change just the AI model
   screenrecon --prompt            change just the default prompt
   screenrecon --dwell             change just the dwell seconds
@@ -52,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--key",
         action="store_true",
-        help="prompt for a new Anthropic API key only (all other config fields are left alone)",
+        help="prompt for a new API key for the current provider (all other fields are left alone)",
     )
     parser.add_argument(
         "--model",

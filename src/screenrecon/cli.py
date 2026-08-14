@@ -14,7 +14,16 @@ PROG = "screenrecon"
 EPILOG = """\
 examples:
   screenrecon                     watch the configured region
-  screenrecon --configure         interactive setup with a drag-to-select picker
+  screenrecon --configure         first-time interactive setup (drag-to-select picker)
+  screenrecon --show              print the current config (credentials masked)
+  screenrecon --screen            re-pick just the watched region
+  screenrecon --key               change just the Anthropic API key
+  screenrecon --model             change just the AI model
+  screenrecon --prompt            change just the default prompt
+  screenrecon --dwell             change just the dwell seconds
+  screenrecon --save-dir          change just the save directory
+  screenrecon --telegram          change just the Telegram bot token + chat ID
+  screenrecon --debug             watch and overlay a red outline on the region
   screenrecon --mode log          watch using the 'log' prompt preset
   screenrecon ask "what is this"  capture once and ask a single question
   screenrecon ask                 capture once and start an interactive Q&A

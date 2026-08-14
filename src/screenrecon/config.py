@@ -727,6 +727,10 @@ def run_set_model(path: str | os.PathLike[str] | None = None) -> int:
     user runs ``--key`` next to update it for the new provider.
     """
     def setter(raw: dict[str, Any]) -> None:
+        # Validate first so a hand-edited unknown provider surfaces as a
+        # crisp ConfigError rather than a KeyError from get_provider()
+        # inside _prompt_provider_and_model. Mirrors run_set_key.
+        validate_config(merge_defaults(raw))
         _prompt_provider_and_model(raw)
 
     return _run_single_field_setter(path, "ScreenRecon set model", setter)
@@ -1021,8 +1025,8 @@ def _run_wizard(
     cfg["save_dir"] = _ask("  save directory", cfg["save_dir"])
 
     ui.rule("Verifying credentials")
-    ok_claude, msg_claude = vision.verify_key(cfg)
-    ui.info(("  OK   " if ok_claude else "  FAIL ") + f"AI: {msg_claude}")
+    ok_ai, msg_ai = vision.verify_key(cfg)
+    ui.info(("  OK   " if ok_ai else "  FAIL ") + f"AI: {msg_ai}")
     ok_tg, msg_tg = notify.verify_credentials(
         str(cfg["telegram_bot_token"]), str(cfg["telegram_chat_id"])
     )
@@ -1038,6 +1042,6 @@ def _run_wizard(
     saved_to = save(cfg, resolved)
     ui.rule()
     ui.info(f"Config saved to {saved_to}")
-    if not (ok_claude and ok_tg):
+    if not (ok_ai and ok_tg):
         ui.warn("Some credentials failed verification. The config was saved anyway.")
     return 0

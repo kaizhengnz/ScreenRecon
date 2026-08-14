@@ -101,7 +101,47 @@ def test_ask_streaming_delivers_deltas_and_returns_joined_text(monkeypatch):
     assert reply.ok is True
     assert reply.text == "Hello"
     assert seen == ["Hel", "lo"]
-    assert client.chat.completions.calls[0]["stream"] is True
+    call = client.chat.completions.calls[0]
+    assert call["stream"] is True
+    # gpt-5 / o-series reasoning models reject max_tokens, so we send the
+    # newer parameter unconditionally — verify the request shape.
+    assert call["max_completion_tokens"] == vision.MAX_TOKENS
+    assert "max_tokens" not in call
+
+
+def test_ask_streaming_falls_back_when_sdk_predates_max_completion_tokens(monkeypatch):
+    """An openai SDK older than max_completion_tokens raises TypeError;
+    retry with the classic max_tokens parameter instead of failing."""
+
+    class RetryingCompletions:
+        def __init__(self):
+            self.calls: list[dict] = []
+            self._attempt = 0
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            self._attempt += 1
+            if self._attempt == 1:
+                raise TypeError(
+                    "create() got an unexpected keyword argument 'max_completion_tokens'"
+                )
+            return FakeStream([FakeEvent("ok")])
+
+    client = install(
+        monkeypatch,
+        type(
+            "C", (), {
+                "chat": type("Chat", (), {"completions": RetryingCompletions()})(),
+                "models": None,
+            },
+        )(),
+    )
+    reply = vision.ask_streaming(_cfg(), [], lambda _: None)
+    assert reply.ok is True
+    calls = client.chat.completions.calls
+    assert len(calls) == 2
+    assert "max_completion_tokens" in calls[0] and "max_tokens" not in calls[0]
+    assert "max_tokens" in calls[1] and "max_completion_tokens" not in calls[1]
 
 
 def test_ask_streaming_translates_auth_errors(monkeypatch):

@@ -56,13 +56,30 @@ class OpenAIProvider:
         except Exception as exc:
             return Reply(False, translate_error(exc, [api_key]))
 
+        # OpenAI reasoning models (gpt-5 / o1 / o3 / o4) reject the classic
+        # ``max_tokens`` and require ``max_completion_tokens``; the SDK maps
+        # the newer name for older Chat Completions models too, so sending
+        # ``max_completion_tokens`` unconditionally works across the whole
+        # family. Fall back to ``max_tokens`` only if the SDK is too old to
+        # accept the newer parameter (TypeError from client.create).
+        request = {
+            "model": model,
+            "messages": _messages_from_turns(turns),
+            "max_completion_tokens": MAX_TOKENS,
+            "stream": True,
+        }
         try:
-            stream = client.chat.completions.create(
-                model=model,
-                messages=_messages_from_turns(turns),
-                max_tokens=MAX_TOKENS,
-                stream=True,
-            )
+            stream = client.chat.completions.create(**request)
+        except TypeError as exc:
+            if "max_completion_tokens" in str(exc):
+                request.pop("max_completion_tokens")
+                request["max_tokens"] = MAX_TOKENS
+                try:
+                    stream = client.chat.completions.create(**request)
+                except Exception as retry_exc:
+                    return Reply(False, translate_error(retry_exc, [api_key]))
+            else:
+                return Reply(False, translate_error(exc, [api_key]))
         except Exception as exc:
             return Reply(False, translate_error(exc, [api_key]))
 

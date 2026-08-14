@@ -400,6 +400,12 @@ never reaches the terminal, shell history, or a screenshot ScreenRecon itself
 takes. No input loop can run unbounded: closed stdin aborts cleanly, and
 repeated invalid answers give up.
 
+The **AI model** field uses a numbered choice via `_ask_choice`: the built-in
+options from `MODEL_CHOICES` occupy indices 1..N, and the current value is
+appended as index N+1 so the prompt hint `[N+1]` always maps "Enter" to "keep
+current". Typing a non-numeric string is accepted as a custom model ID, so
+future models Anthropic ships work without a wizard update.
+
 ### 5.8 Command line interface (`cli.py`)
 
 ```

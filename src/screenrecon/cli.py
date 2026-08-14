@@ -51,6 +51,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="pick a new AI model only (all other config fields are left alone)",
     )
     parser.add_argument(
+        "--prompt",
+        action="store_true",
+        help="pick a new default prompt only (all other config fields are left alone)",
+    )
+    parser.add_argument(
+        "--dwell",
+        action="store_true",
+        help="set dwell seconds only (all other config fields are left alone)",
+    )
+    parser.add_argument(
+        "--save-dir",
+        dest="save_dir",
+        action="store_true",
+        help="set the save directory only (all other config fields are left alone)",
+    )
+    parser.add_argument(
+        "--telegram",
+        action="store_true",
+        help="prompt for Telegram bot token and chat ID only (all other fields are left alone)",
+    )
+    parser.add_argument(
         "--mode",
         metavar="NAME",
         help="use the named prompt preset from the 'prompts' config section",
@@ -114,14 +135,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("the 'ask' subcommand cannot be combined with --configure")
     if args.mode and args.configure:
         parser.error("--mode only applies when watching or when using 'ask'")
-    setter_flags = [name for name in ("screen", "key", "model") if getattr(args, name)]
+    setter_flags = [
+        name
+        for name in ("screen", "key", "model", "prompt", "dwell", "save_dir", "telegram")
+        if getattr(args, name)
+    ]
     if len(setter_flags) > 1:
-        parser.error(
-            "--screen / --key / --model each set one field; use them one at a time"
-        )
+        parser.error("the single-field setters are mutually exclusive; use them one at a time")
     if setter_flags and (args.configure or args.command == "ask" or args.mode or args.debug):
         parser.error(
-            f"--{setter_flags[0]} sets one config field; use it on its own"
+            f"--{setter_flags[0].replace('_', '-')} sets one config field; use it on its own"
         )
 
     # Imported lazily so that --help and --version never load mss/anthropic.
@@ -143,6 +166,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             return config.run_set_key(args.config_path)
         if args.model:
             return config.run_set_model(args.config_path)
+        if args.prompt:
+            return config.run_set_prompt(args.config_path)
+        if args.dwell:
+            return config.run_set_dwell(args.config_path)
+        if args.save_dir:
+            return config.run_set_save_dir(args.config_path)
+        if args.telegram:
+            return config.run_set_telegram(args.config_path)
 
         cfg = config.load(args.config_path)
         config.require_credentials(cfg)

@@ -62,8 +62,12 @@ cursor there will never re-trigger.
 | `screenrecon` | Watch the configured region |
 | `screenrecon --configure` | Interactive setup: drag-to-select region picker, then credentials (verified online) |
 | `screenrecon --screen` | Re-pick just the watched region; every other config field is left alone |
-| `screenrecon --key` | Prompt for a new Anthropic API key only; every other config field is left alone |
-| `screenrecon --model` | Pick a new AI model only; every other config field is left alone |
+| `screenrecon --key` | Prompt for a new Anthropic API key only |
+| `screenrecon --model` | Pick a new AI model only |
+| `screenrecon --prompt` | Pick a new default prompt only |
+| `screenrecon --dwell` | Set dwell seconds only |
+| `screenrecon --save-dir` | Set the archive directory only |
+| `screenrecon --telegram` | Prompt for Telegram bot token + chat ID (as a pair) |
 | `screenrecon --mode NAME` | Watch using the `prompts.NAME` preset instead of the default prompt |
 | `screenrecon ask "question"` | Capture once, answer one question, exit |
 | `screenrecon ask` | Capture once, then keep asking questions about that screenshot |

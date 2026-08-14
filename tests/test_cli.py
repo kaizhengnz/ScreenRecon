@@ -49,6 +49,10 @@ def calls(monkeypatch):
     monkeypatch.setattr(config, "run_set_region", lambda path: record("set_region", path))
     monkeypatch.setattr(config, "run_set_key", lambda path: record("set_key", path))
     monkeypatch.setattr(config, "run_set_model", lambda path: record("set_model", path))
+    monkeypatch.setattr(config, "run_set_prompt", lambda path: record("set_prompt", path))
+    monkeypatch.setattr(config, "run_set_dwell", lambda path: record("set_dwell", path))
+    monkeypatch.setattr(config, "run_set_save_dir", lambda path: record("set_save_dir", path))
+    monkeypatch.setattr(config, "run_set_telegram", lambda path: record("set_telegram", path))
     return recorded
 
 
@@ -96,6 +100,23 @@ def test_model_sets_only_the_model(config_file, calls):
     assert "watch" not in calls
 
 
+@pytest.mark.parametrize(
+    ("flag", "recorded_key"),
+    [
+        ("--prompt", "set_prompt"),
+        ("--dwell", "set_dwell"),
+        ("--save-dir", "set_save_dir"),
+        ("--telegram", "set_telegram"),
+    ],
+)
+def test_single_field_setters_route_to_their_config_helpers(
+    config_file, calls, flag, recorded_key
+):
+    assert cli.main(["--config", config_file, flag]) == 0
+    assert calls[recorded_key] == config_file
+    assert "watch" not in calls
+
+
 def test_ask_passes_the_joined_question(config_file, calls):
     assert cli.main(["--config", config_file, "ask", "what", "is", "this"]) == 0
     assert calls["ask"] == "what is this"
@@ -130,6 +151,10 @@ def test_ask_with_a_mode_uses_the_preset_as_the_question(config_file, calls):
         ["--screen", "--key"],
         ["--screen", "--model"],
         ["--key", "--model"],
+        ["--prompt", "--dwell"],
+        ["--save-dir", "--telegram"],
+        ["--telegram", "ask", "q"],
+        ["--prompt", "--configure"],
     ],
 )
 def test_conflicting_flags_exit_two(argv):

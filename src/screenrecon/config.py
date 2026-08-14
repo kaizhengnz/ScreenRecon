@@ -625,6 +625,58 @@ def run_set_model(path: str | os.PathLike[str] | None = None) -> int:
     return _run_single_field_setter(path, "ScreenRecon set model", setter)
 
 
+def run_set_prompt(path: str | os.PathLike[str] | None = None) -> int:
+    """Pick a new default prompt and save it; leave every other field alone."""
+    def setter(raw: dict[str, Any]) -> None:
+        current = str(raw.get("prompt", DEFAULT_PROMPT))
+        raw["prompt"] = _ask_choice(
+            "default prompt", PROMPT_CHOICES, current, default=DEFAULT_PROMPT
+        )
+
+    return _run_single_field_setter(path, "ScreenRecon set default prompt", setter)
+
+
+def run_set_dwell(path: str | os.PathLike[str] | None = None) -> int:
+    """Prompt for a new dwell-seconds value and save it; leave every other field alone."""
+    def setter(raw: dict[str, Any]) -> None:
+        current = raw.get("dwell_seconds", DEFAULTS["dwell_seconds"])
+        raw["dwell_seconds"] = _ask_float("  dwell seconds", current, minimum=0)
+
+    return _run_single_field_setter(path, "ScreenRecon set dwell seconds", setter)
+
+
+def run_set_save_dir(path: str | os.PathLike[str] | None = None) -> int:
+    """Prompt for a new save directory and save it; leave every other field alone."""
+    def setter(raw: dict[str, Any]) -> None:
+        current = raw.get("save_dir", DEFAULT_SAVE_DIR)
+        raw["save_dir"] = _ask("  save directory", current)
+
+    return _run_single_field_setter(path, "ScreenRecon set save directory", setter)
+
+
+def run_set_telegram(path: str | os.PathLike[str] | None = None) -> int:
+    """Prompt for both Telegram credentials and save them; leave every other field alone.
+
+    The token and chat ID are prompted together because they are a matched pair
+    — a valid token with the wrong chat ID delivers to somewhere the user did
+    not intend. Splitting them into two flags would let the user change one
+    without the other and silently misdeliver captures.
+    """
+    def setter(raw: dict[str, Any]) -> None:
+        raw["telegram_bot_token"] = _ask(
+            "  Telegram bot token",
+            raw.get("telegram_bot_token", DEFAULTS["telegram_bot_token"]),
+            secret=True,
+        )
+        raw["telegram_chat_id"] = _ask(
+            "  Telegram chat ID",
+            raw.get("telegram_chat_id", DEFAULTS["telegram_chat_id"]),
+            secret=True,
+        )
+
+    return _run_single_field_setter(path, "ScreenRecon set Telegram credentials", setter)
+
+
 def _run_wizard(
     path: str | os.PathLike[str] | None = None,
     picker_factory: PickerFactory | None = None,

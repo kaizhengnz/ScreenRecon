@@ -574,6 +574,93 @@ def test_set_model_refuses_when_no_config_exists(tmp_path, capsys):
     assert not path.exists()
 
 
+def _existing_config():
+    return {
+        "region": {"left": 50, "top": 60, "width": 400, "height": 300},
+        "anthropic_api_key": "old-key",
+        "telegram_bot_token": "old-token",
+        "telegram_chat_id": "old-chat",
+        "save_dir": "/keep/me",
+        "prompt": "keep me",
+        "prompts": {"log": "find errors"},
+        "dwell_seconds": 2.5,
+        "model": "claude-opus-5",
+    }
+
+
+def test_set_prompt_updates_only_the_prompt(tmp_path, answers):
+    scripted, _ = answers
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(_existing_config()), encoding="utf-8")
+    scripted.append("2")  # PROMPT_CHOICES[1] — "answer"
+
+    assert config.run_set_prompt(path) == 0
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["prompt"] == config.PROMPT_CHOICES[1][1]
+    for key, value in _existing_config().items():
+        if key == "prompt":
+            continue
+        assert saved[key] == value
+
+
+def test_set_dwell_updates_only_dwell_seconds(tmp_path, answers):
+    scripted, _ = answers
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(_existing_config()), encoding="utf-8")
+    scripted.append("4.5")
+
+    assert config.run_set_dwell(path) == 0
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["dwell_seconds"] == 4.5
+    for key, value in _existing_config().items():
+        if key == "dwell_seconds":
+            continue
+        assert saved[key] == value
+
+
+def test_set_save_dir_updates_only_save_dir(tmp_path, answers):
+    scripted, _ = answers
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(_existing_config()), encoding="utf-8")
+    scripted.append("/new/place")
+
+    assert config.run_set_save_dir(path) == 0
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["save_dir"] == "/new/place"
+    for key, value in _existing_config().items():
+        if key == "save_dir":
+            continue
+        assert saved[key] == value
+
+
+def test_set_telegram_updates_both_token_and_chat_id_together(tmp_path, answers):
+    scripted, _ = answers
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(_existing_config()), encoding="utf-8")
+    scripted.extend(["new-token", "new-chat"])
+
+    assert config.run_set_telegram(path) == 0
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["telegram_bot_token"] == "new-token"
+    assert saved["telegram_chat_id"] == "new-chat"
+    for key, value in _existing_config().items():
+        if key in ("telegram_bot_token", "telegram_chat_id"):
+            continue
+        assert saved[key] == value
+
+
+@pytest.mark.parametrize(
+    "setter",
+    ["run_set_prompt", "run_set_dwell", "run_set_save_dir", "run_set_telegram"],
+)
+def test_single_field_setters_refuse_when_no_config_exists(tmp_path, capsys, setter):
+    path = tmp_path / "config.json"  # does not exist
+    assert getattr(config, setter)(path) == 1
+    err = capsys.readouterr().err
+    assert "--configure" in err
+    assert not path.exists()
+
+
 def test_set_region_clears_a_stale_monitor_when_enumeration_fails(tmp_path, monkeypatch):
     """A previously-stored monitor annotation must not linger when we cannot
     recompute — leaving stale info would defeat the whole point of storing it."""

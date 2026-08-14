@@ -553,7 +553,9 @@ def _run_wizard(
     )
 
     ui.info("\n4) Default prompt")
-    cfg["prompt"] = _ask_choice("default prompt", PROMPT_CHOICES, str(cfg["prompt"]))
+    cfg["prompt"] = _ask_choice(
+        "default prompt", PROMPT_CHOICES, str(cfg["prompt"]), default=DEFAULT_PROMPT
+    )
 
     ui.info("\n5) Credentials (never echoed in full)")
     env_key = os.environ.get(ENV_API_KEY, "").strip()

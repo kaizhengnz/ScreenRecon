@@ -454,12 +454,20 @@ def _run_wizard(
     ui.info("1) Watched region")
     cfg["region"] = _prompt_region(dict(cfg["region"]), picker_factory)
 
-    ui.info("\n2) Trigger and model")
+    ui.info("\n2) Trigger")
+    ui.info(
+        "   A capture fires when the cursor stays in the region for this many"
+        " seconds.\n"
+        "   After a capture, the cursor must leave and re-enter the region to"
+        " arm the next one."
+    )
     cfg["dwell_seconds"] = _ask_float("  dwell seconds", cfg["dwell_seconds"], minimum=0)
+
+    ui.info("\n3) AI model")
     cfg["model"] = _ask_choice("AI model", MODEL_CHOICES, str(cfg["model"]))
     cfg["prompt"] = _ask("  default prompt", cfg["prompt"])
 
-    ui.info("\n3) Credentials (never echoed in full)")
+    ui.info("\n4) Credentials (never echoed in full)")
     env_key = os.environ.get(ENV_API_KEY, "").strip()
     if env_key:
         ui.info(f"  {ENV_API_KEY} is set ({ui.mask(env_key)}); it wins over this file at runtime.")
@@ -467,7 +475,7 @@ def _run_wizard(
     cfg["telegram_bot_token"] = _ask("  Telegram bot token", cfg["telegram_bot_token"], secret=True)
     cfg["telegram_chat_id"] = _ask("  Telegram chat ID", cfg["telegram_chat_id"], secret=True)
 
-    ui.info("\n4) Local archive")
+    ui.info("\n5) Local archive")
     cfg["save_dir"] = _ask("  save directory", cfg["save_dir"])
 
     ui.rule("Verifying credentials")

@@ -1,5 +1,7 @@
 # ScreenRecon
 
+English | [简体中文](README.zh-CN.md)
+
 Watch a rectangle on your screen. When the mouse **dwells inside it** for a few seconds,
 ScreenRecon captures that region, sends it to the AI, prints the answer in your
 terminal, pushes the screenshot plus the answer to your Telegram, and files both away

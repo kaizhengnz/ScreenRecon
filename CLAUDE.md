@@ -14,6 +14,7 @@
 
 ## Docs stay in sync with behavior
 - `README.md` is the authoritative user-facing description. When changing observable behavior (CLI flags, config fields, output format, platform quirks, error messages users see), update the README in the same change.
+- `README.zh-CN.md` is a translation of `README.md`, not an independent document. Any README change lands in both files in the same commit; English is the source of truth on conflict. Code identifiers — CLI flags, config keys, model IDs, env var names — stay in English on both sides.
 - Feature additions and behavior changes get a row in the **Revision history** table of `docs/ScreenRecon_Design.md`. The **Document version** row in the header table is not bumped manually — it is auto-synced to `__version__` by `release_pr.yml` on each release, so the design doc always states which code version it describes.
 - No separate `CHANGELOG.md` — only introduce one if the Revision history table outgrows itself.
 

@@ -187,6 +187,56 @@ def test_prompt_choice_enter_keeps_current(answers):
     )
 
 
+def test_code_preset_asks_for_a_language_and_bakes_it_in(answers):
+    """The code preset stores a template; the follow-up commits it to one language."""
+    scripted, used = answers
+    code_index = [label for label, _, _ in config.PROMPT_CHOICES].index("code") + 1
+    go_index = [label for label, _, _ in config.LANGUAGE_CHOICES].index("Go") + 1
+    scripted.extend([str(code_index), str(go_index)])
+
+    result = config._ask_prompt("old current prompt")
+
+    assert result == config.CODE_PROMPT_TEMPLATE.format(language="Go")
+    assert "{language}" not in result
+    assert len(used) == 2  # the preset question, then the language question
+
+
+def test_code_preset_accepts_a_typed_language(answers):
+    scripted, _ = answers
+    code_index = [label for label, _, _ in config.PROMPT_CHOICES].index("code") + 1
+    scripted.extend([str(code_index), "Elixir"])
+
+    assert config._ask_prompt("old current prompt") == config.CODE_PROMPT_TEMPLATE.format(
+        language="Elixir"
+    )
+
+
+def test_non_code_preset_asks_nothing_extra(answers):
+    scripted, used = answers
+    scripted.append("1")
+
+    assert config._ask_prompt("old current prompt") == config.PROMPT_CHOICES[0][1]
+    assert len(used) == 1
+
+
+def test_code_language_follow_up_offers_the_saved_language_as_current(answers):
+    """Rerunning --prompt on an existing code prompt keeps that language on Enter."""
+    scripted, _ = answers
+    code_index = [label for label, _, _ in config.PROMPT_CHOICES].index("code") + 1
+    keep_current = str(len(config.LANGUAGE_CHOICES) + 1)
+    scripted.extend([str(code_index), keep_current])
+
+    saved = config.CODE_PROMPT_TEMPLATE.format(language="Rust")
+
+    assert config._ask_prompt(saved) == saved
+
+
+def test_code_language_of_ignores_unrelated_prompts():
+    assert config._code_language_of("Transcribe this table as CSV.") == (
+        config.DEFAULT_CODE_LANGUAGE
+    )
+
+
 def test_minimum_is_enforced(answers):
     scripted, _ = answers
     scripted.extend(["0", "-5", "800"])

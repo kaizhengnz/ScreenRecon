@@ -91,6 +91,30 @@ preset label or a custom base URL; when a label is picked, the default
 model is pre-filled but still editable. Endpoints verified against each
 provider's compat-mode docs at the time of writing (2026-08)."""
 
+CODE_PROMPT_TEMPLATE = (
+    "Read the problem in this screenshot and write {language} code that solves it."
+)
+"""Prompt stored for the ``code`` preset once a language is substituted in."""
+
+DEFAULT_CODE_LANGUAGE = "Python"
+
+LANGUAGE_CHOICES: list[tuple[str, str, str]] = [
+    (language, language, "")
+    for language in (
+        DEFAULT_CODE_LANGUAGE,
+        "C#",
+        "Java",
+        "TypeScript",
+        "JavaScript",
+        "Go",
+        "C++",
+        "Rust",
+    )
+]
+"""Languages offered after the ``code`` preset. Label and value are the same
+string, and any other language can be typed in — the note column stays empty
+because a language name explains itself."""
+
 PROMPT_CHOICES: list[tuple[str, str, str]] = [
     (
         "describe",
@@ -102,9 +126,18 @@ PROMPT_CHOICES: list[tuple[str, str, str]] = [
         "Read the question in this screenshot and answer it.",
         "answer questions in the image",
     ),
+    (
+        "code",
+        CODE_PROMPT_TEMPLATE,
+        "write code",
+    ),
 ]
 """Built-in prompt presets. Same ``(label, value, note)`` shape as the entries
-in :data:`MODEL_CHOICES_BY_PROVIDER`."""
+in :data:`MODEL_CHOICES_BY_PROVIDER`.
+
+The ``code`` entry is the one preset whose value is a template rather than a
+finished prompt: :func:`_ask_prompt` asks which language and substitutes it,
+so what lands in the config is committed to one language."""
 
 DEFAULTS: dict[str, Any] = {
     "region": {"left": 100, "top": 100, "width": 600, "height": 400},
@@ -476,7 +509,8 @@ def _ask_choice(
                 break
 
     for index, (preset_label, _, note) in enumerate(presets, start=1):
-        ui.info(f"    {index}) {preset_label:<{width}}  ({note})")
+        suffix = f"  ({note})" if note else ""
+        ui.info(f"    {index}) {preset_label:<{width}}{suffix}".rstrip())
     ui.info(f"    {current_index}) (keep current — {current_preview})")
 
     for _ in range(MAX_PROMPT_RETRIES):
@@ -494,6 +528,36 @@ def _ask_choice(
             continue
         return answer  # custom value
     raise WizardAborted(f"{label}: too many invalid answers, giving up.")
+
+
+def _code_language_of(prompt: str) -> str:
+    """Recover the language from a saved code prompt, or fall back to the default.
+
+    Lets the language follow-up offer "keep current — Go" when the config
+    already holds a code prompt, instead of pretending every rerun starts from
+    Python.
+    """
+    prefix, _, suffix = CODE_PROMPT_TEMPLATE.partition("{language}")
+    if prompt.startswith(prefix) and prompt.endswith(suffix):
+        language = prompt[len(prefix) : len(prompt) - len(suffix)]
+        if language:
+            return language
+    return DEFAULT_CODE_LANGUAGE
+
+
+def _ask_prompt(current: str) -> str:
+    """Pick the default prompt, asking which language when ``code`` is chosen.
+
+    Every other preset stores exactly what :func:`_ask_choice` returns; ``code``
+    returns a template, and the follow-up is what turns it into a prompt
+    committed to one language rather than leaving the model to guess.
+    """
+    chosen = _ask_choice("default prompt", PROMPT_CHOICES, current, default=DEFAULT_PROMPT)
+    if chosen != CODE_PROMPT_TEMPLATE:
+        return chosen
+
+    language = _ask_choice("language", LANGUAGE_CHOICES, _code_language_of(current))
+    return CODE_PROMPT_TEMPLATE.format(language=language)
 
 
 def _prompt_region(
@@ -858,9 +922,7 @@ def run_set_prompt(path: str | os.PathLike[str] | None = None) -> int:
     """Pick a new default prompt and save it; leave every other field alone."""
     def setter(raw: dict[str, Any]) -> None:
         current = str(raw.get("prompt", DEFAULT_PROMPT))
-        raw["prompt"] = _ask_choice(
-            "default prompt", PROMPT_CHOICES, current, default=DEFAULT_PROMPT
-        )
+        raw["prompt"] = _ask_prompt(current)
 
     return _run_single_field_setter(path, "ScreenRecon set default prompt", setter)
 
@@ -1020,9 +1082,7 @@ def _run_wizard(
     _prompt_provider_and_model(cfg)
 
     ui.info("\n4) Default prompt")
-    cfg["prompt"] = _ask_choice(
-        "default prompt", PROMPT_CHOICES, str(cfg["prompt"]), default=DEFAULT_PROMPT
-    )
+    cfg["prompt"] = _ask_prompt(str(cfg["prompt"]))
 
     ui.info("\n5) Credentials")
     ui.info(

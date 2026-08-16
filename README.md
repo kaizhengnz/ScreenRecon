@@ -266,8 +266,8 @@ real repository.
 
 ## Not in v1
 
-Graphical region selection, watching several regions at once, content-change triggers,
-a hosted backend, and standalone `.exe`/`.app` bundles.
+Watching several regions at once, content-change triggers, a hosted backend, and
+standalone `.exe`/`.app` bundles.
 
 ## License
 

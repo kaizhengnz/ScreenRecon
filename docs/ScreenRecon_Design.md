@@ -12,7 +12,7 @@
 
 | Date | Changes |
 |---|---|
-| 2026-08-12 | Initial draft, written in Chinese before implementation. Not part of this series. |
+| 2026-08-12 | Initial v1.0 draft, written in Chinese before implementation. Not part of this series. |
 | 2026-08-13 | First released design document. Translated to English and reconciled with the shipped implementation: licence changed to Apache 2.0, user-facing language changed to English, default model updated, and the design corrected wherever the draft's assumptions turned out to be wrong. Every deviation is listed in [§11](#11-changes-from-the-v10-draft). |
 | 2026-08-13 | §7 rewritten: release flow moves from a single direct-push workflow to a two-workflow PR-based flow (`release_pr.yml` opens a release PR with auto-merge; `release_auto.yml` runs test / build / tag / publish on the merge commit). Motivated by branch-protection alignment — `github-actions[bot]` cannot bypass rulesets, so bumps must land via PR like every other change. |
 | 2026-08-14 | Drag-to-select region picker replaces the `--show-cursor` + manual-entry flow (SR-2). New §5.9 documents the tkinter overlay and its test seam. FR-12 restated in terms of the picker; §3.3 no longer lists a graphical picker as out of scope. `--show-cursor` was removed from the CLI; users on the old flag get a one-line hint pointing at `--configure`. Multi-monitor: the overlay spans the virtual desktop, and `platform.enumerate_monitors()` / `find_monitor_containing()` power the Esc-fallback centring on whichever monitor holds the cursor. |

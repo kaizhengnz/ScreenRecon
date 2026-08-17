@@ -487,22 +487,34 @@ def _ask_choice(
     for index, (_, preset_value, note) in enumerate(presets, start=1):
         if preset_value == current:
             current_matching_index = index
-            if note:
-                current_note = note
+            current_note = note or ""
             break
-    current_display = current_note or current_preview
     current_label = (
         f"Current {label} = {current_matching_index}"
         if current_matching_index is not None
         else f"Current {label}"
     )
 
-    width = max([len(l) for l in labels] + [len(current_label)]) if labels else len(current_label)
+    # When a matching preset exists but has no note, the "= K" pointer to that
+    # numbered entry is enough — no need to repeat the value in trailing parens.
+    if current_matching_index is not None and not current_note:
+        current_display = ""
+    else:
+        current_display = current_note or current_preview
+
+    # Only pad the label column when at least one preset has a note to align to;
+    # otherwise the current line ends up with a huge blank gap between the label
+    # and the trailing parens.
+    have_any_note = any(note for _, _, note in presets)
+    width = max([len(l) for l in labels] + [len(current_label)]) if have_any_note else 0
 
     for index, (preset_label, _, note) in enumerate(presets, start=1):
         suffix = f"  ({note})" if note else ""
         ui.info(f"    {index}) {preset_label:<{width}}{suffix}".rstrip())
-    ui.info(f"    {current_index}) {current_label:<{width}}  ({current_display})")
+    if current_display:
+        ui.info(f"    {current_index}) {current_label:<{width}}  ({current_display})")
+    else:
+        ui.info(f"    {current_index}) {current_label:<{width}}".rstrip())
 
     for _ in range(MAX_PROMPT_RETRIES):
         answer = _ask(

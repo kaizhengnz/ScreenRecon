@@ -62,15 +62,15 @@ screenrecon
 | `screenrecon --screen` | 只重新选取区域，其他配置项一概不动 |
 | `screenrecon --key` | 为当前服务商输入新的 API key |
 | `screenrecon --model` | 只更换 AI 模型 |
-| `screenrecon --prompt` | 只更换默认提示词 |
+| `screenrecon --prompt` | 只更换默认提示词（mini-wizard） |
+| `screenrecon --prompt "..."` | 本次运行使用 `"..."` 作为系统提示词；配置文件不动 |
 | `screenrecon --dwell` | 只设置停留秒数 |
 | `screenrecon --save-dir` | 只设置归档目录 |
 | `screenrecon --telegram` | 输入 Telegram bot token + chat ID（成对设置） |
 | `screenrecon --show` | 打印当前配置（凭据已掩码）并退出 |
-| `screenrecon --mode NAME` | 用 `prompts.NAME` 预设代替默认提示词来盯屏 |
 | `screenrecon ask "question"` | 截一次图，回答一个问题，然后退出 |
 | `screenrecon ask` | 截一次图，然后就这张截图持续追问 |
-| `screenrecon --mode NAME ask` | 截一次图并用 `prompts.NAME` 预设提问 |
+| `screenrecon --prompt "..." ask` | 截一次图并把 `"..."` 作为问题 |
 | `screenrecon --config PATH` | 使用另一个配置文件 |
 | `screenrecon --debug` | 照常盯屏，并在区域周围画一圈常驻红框（用于肉眼核对） |
 | `screenrecon --version` | 打印版本号 |
@@ -87,7 +87,7 @@ API 调用失败时 `ask` 会以非零状态退出，所以 `screenrecon ask "..
 否则为 `~/.config/screenrecon/config.json`。在 macOS 和 Linux 上，该文件及其目录以
 仅属主可访问的权限创建（`0600` / `0700`）。
 
-提示词预设通过直接编辑配置文件添加 —— 向导不会问这一项。
+系统提示词是单个字符串 —— `prompt` —— 通过 `--configure` 或 `--prompt` 设置一次；或用 `--prompt "..."` 只在本次运行中临时替换。要浏览可以复制的现成提示词，见 [`examples/prompts.json`](examples/prompts.json)。
 
 ```json
 {
@@ -100,10 +100,6 @@ API 调用失败时 `ask` 会以非零状态退出，所以 `screenrecon ask "..
   "telegram_chat_id": "123456789",
   "save_dir": "~/ScreenRecon",
   "prompt": "Describe what is in this screenshot. Be concise and lead with the key information.",
-  "prompts": {
-    "log": "Find the error messages in this screenshot and explain the likely cause.",
-    "table": "Transcribe this table as CSV."
-  },
   "dwell_seconds": 3
 }
 ```
@@ -117,7 +113,7 @@ API 调用失败时 `ask` 会以非零状态退出，所以 `screenrecon ask "..
 | `model` | 所选服务商下任意具备视觉能力的模型 ID。默认 `claude-haiku-4-5`；向导会按服务商给出精选清单（`claude-opus-5`、`gpt-5`、`gemini-2.5-pro`、`deepseek-vl2` 等），也接受手动输入任意 ID。 |
 | `api_key` | 所选服务商的密钥。可用 `--key` 重写；向导在初始化时会提示输入。0.1.5 的旧配置里可能还留着 `anthropic_api_key` —— 读取时作为回退兼容，并在下次保存时迁移。 |
 | `base_url` | 仅当 `provider` 为 `openai_compatible` 时使用。填写 Chat-Completions 兼容的端点（DeepSeek / Moonshot / Doubao 的预设由向导自动填入）。 |
-| `prompts` | 具名预设，用 `--mode NAME` 选用。 |
+| `prompt` | 每次截屏时发送的系统提示词。任意字符串；不改动本字段的一次性覆盖用 `--prompt "..."`。SR-36 之前的配置里可能还有 `prompts` 字典 —— 下次保存时会被静默丢弃。 |
 | `save_dir` | `~` 会被展开，目录不存在时自动创建。 |
 
 0.1.6 起不再支持环境变量覆盖：配置文件是凭据的唯一来源。从 0.1.5 升级上来、原先依赖

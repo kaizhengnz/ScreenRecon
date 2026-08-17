@@ -67,15 +67,15 @@ cursor there will never re-trigger.
 | `screenrecon --screen` | Re-pick just the watched region; every other config field is left alone |
 | `screenrecon --key` | Prompt for a new API key for the current provider |
 | `screenrecon --model` | Pick a new AI model only |
-| `screenrecon --prompt` | Pick a new default prompt only |
+| `screenrecon --prompt` | Pick a new default prompt only (mini-wizard) |
+| `screenrecon --prompt "..."` | Watch with `"..."` as the system prompt for this run only; config is untouched |
 | `screenrecon --dwell` | Set dwell seconds only |
 | `screenrecon --save-dir` | Set the archive directory only |
 | `screenrecon --telegram` | Prompt for Telegram bot token + chat ID (as a pair) |
 | `screenrecon --show` | Print the current config (credentials masked) and exit |
-| `screenrecon --mode NAME` | Watch using the `prompts.NAME` preset instead of the default prompt |
 | `screenrecon ask "question"` | Capture once, answer one question, exit |
 | `screenrecon ask` | Capture once, then keep asking questions about that screenshot |
-| `screenrecon --mode NAME ask` | Capture once and ask the `prompts.NAME` preset |
+| `screenrecon --prompt "..." ask` | Capture once and use `"..."` as the question |
 | `screenrecon --config PATH` | Use an alternative config file |
 | `screenrecon --debug` | Watch as usual and show a persistent red outline around the region (visual sanity check) |
 | `screenrecon --version` | Print the version |
@@ -92,7 +92,7 @@ Default location: `$XDG_CONFIG_HOME/screenrecon/config.json` if that variable is
 set, otherwise `~/.config/screenrecon/config.json`. On macOS and Linux the file
 and its directory are created owner-only (`0600` / `0700`).
 
-Prompt presets are added by editing the file — the wizard does not ask for them.
+The system prompt is a single string — `prompt` — set once via `--configure` or `--prompt`, or supplied ad-hoc for one run via `--prompt "..."`. For a browsable list of ready-made prompts to copy from, see [`examples/prompts.json`](examples/prompts.json).
 
 ```json
 {
@@ -105,10 +105,6 @@ Prompt presets are added by editing the file — the wizard does not ask for the
   "telegram_chat_id": "123456789",
   "save_dir": "~/ScreenRecon",
   "prompt": "Describe what is in this screenshot. Be concise and lead with the key information.",
-  "prompts": {
-    "log": "Find the error messages in this screenshot and explain the likely cause.",
-    "table": "Transcribe this table as CSV."
-  },
   "dwell_seconds": 3
 }
 ```
@@ -122,7 +118,7 @@ Prompt presets are added by editing the file — the wizard does not ask for the
 | `model` | Any vision-capable model ID for the chosen provider. Defaults to `claude-haiku-4-5`; the wizard offers curated shortlists per provider (`claude-opus-5`, `gpt-5`, `gemini-2.5-pro`, `deepseek-vl2`, …) and accepts any typed custom ID. |
 | `api_key` | The key for the chosen provider. Rewritten by `--key`; the wizard prompts for it as part of setup. Legacy 0.1.5 configs may still carry `anthropic_api_key` — it is read as a fallback and migrated on the next save. |
 | `base_url` | Only used when `provider` is `openai_compatible`. Set to the Chat-Completions-compatible endpoint (DeepSeek / Moonshot / Doubao presets are pre-filled by the wizard). |
-| `prompts` | Named presets, selected with `--mode NAME`. |
+| `prompt` | The system prompt sent with every capture. Any string; use `--prompt "..."` for a one-off override without changing this. Pre-SR-36 configs may still carry a `prompts` dict — it is silently dropped on the next save. |
 | `save_dir` | `~` is expanded and the directory is created if missing. |
 
 No environment-variable overrides in 0.1.6+: the config file is the single source of truth for credentials. Users upgrading from 0.1.5 who relied on `ANTHROPIC_API_KEY` should run `screenrecon --key` once to move the value into the file.

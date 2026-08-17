@@ -19,12 +19,12 @@ examples:
   screenrecon --screen            re-pick just the watched region
   screenrecon --key               change just the API key (for the current provider)
   screenrecon --model             change just the AI model
-  screenrecon --prompt            change just the default prompt
+  screenrecon --prompt            change just the default prompt (mini-wizard)
+  screenrecon --prompt "..."      use "..." as the prompt for this run only
   screenrecon --dwell             change just the dwell seconds
   screenrecon --save-dir          change just the save directory
   screenrecon --telegram          change just the Telegram bot token + chat ID
   screenrecon --debug             watch and overlay a red outline on the region
-  screenrecon --mode log          watch using the 'log' prompt preset
   screenrecon ask "what is this"  capture once and ask a single question
   screenrecon ask                 capture once and start an interactive Q&A
 """
@@ -61,8 +61,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--prompt",
-        action="store_true",
-        help="pick a new default prompt only (all other config fields are left alone)",
+        nargs="?",
+        default=None,
+        const=True,
+        metavar="TEXT",
+        help=(
+            "with TEXT: use it as the system prompt for this run only "
+            "(config is untouched); without TEXT: pick a new default prompt via the mini-wizard"
+        ),
     )
     parser.add_argument(
         "--dwell",
@@ -84,11 +90,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--show",
         action="store_true",
         help="print the current config (credentials masked) and exit",
-    )
-    parser.add_argument(
-        "--mode",
-        metavar="NAME",
-        help="use the named prompt preset from the 'prompts' config section",
     )
     parser.add_argument(
         "--config",
@@ -156,18 +157,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    # --prompt has three forms after nargs="?": None (not passed),
+    # True (--prompt with no argument → mini-wizard), str (inline session prompt).
+    inline_prompt = args.prompt if isinstance(args.prompt, str) else None
+    prompt_is_setter = args.prompt is True
+
     if args.command == "ask" and args.configure:
         parser.error("the 'ask' subcommand cannot be combined with --configure")
-    if args.mode and args.configure:
-        parser.error("--mode only applies when watching or when using 'ask'")
+
     setter_flags = [
         name
-        for name in ("screen", "key", "model", "prompt", "dwell", "save_dir", "telegram")
+        for name in ("screen", "key", "model", "dwell", "save_dir", "telegram")
         if getattr(args, name)
     ]
+    if prompt_is_setter:
+        setter_flags.append("prompt")
+
     if len(setter_flags) > 1:
         parser.error("the single-field setters are mutually exclusive; use them one at a time")
-    if setter_flags and (args.configure or args.command == "ask" or args.mode or args.debug):
+    if setter_flags and (
+        args.configure or args.command == "ask" or inline_prompt is not None or args.debug
+    ):
         parser.error(
             f"--{setter_flags[0].replace('_', '-')} sets one config field; use it on its own"
         )
@@ -175,7 +185,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         setter_flags
         or args.configure
         or args.command == "ask"
-        or args.mode
+        or inline_prompt is not None
         or args.debug
     ):
         parser.error("--show only prints the current config; use it on its own")
@@ -199,7 +209,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return config.run_set_key(args.config_path)
         if args.model:
             return config.run_set_model(args.config_path)
-        if args.prompt:
+        if prompt_is_setter:
             return config.run_set_prompt(args.config_path)
         if args.dwell:
             return config.run_set_dwell(args.config_path)
@@ -212,14 +222,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         cfg = config.load(args.config_path)
         config.require_credentials(cfg)
-        # Resolved for every path that reaches the API, so an unknown --mode is
-        # always an error rather than a silently ignored flag.
-        prompt = config.resolve_prompt(cfg, args.mode)
+        prompt = inline_prompt or str(cfg["prompt"])
         _warn_about_redirected_endpoint(cfg)
 
         if args.command == "ask":
-            # With --mode but no question, the preset is the question.
-            question = " ".join(args.question).strip() or (prompt if args.mode else None)
+            # An inline --prompt with no positional question doubles as the question.
+            question = " ".join(args.question).strip() or inline_prompt
             return watcher.run_ask(cfg, question)
 
         return watcher.run(cfg, prompt, debug=args.debug)

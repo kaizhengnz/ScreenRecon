@@ -483,11 +483,9 @@ def _ask_choice(
                 break
 
     current_matching_index: int | None = None
-    current_note = ""
-    for index, (_, preset_value, note) in enumerate(presets, start=1):
+    for index, (_, preset_value, _) in enumerate(presets, start=1):
         if preset_value == current:
             current_matching_index = index
-            current_note = note or ""
             break
     current_label = (
         f"Current {label} = {current_matching_index}"
@@ -495,30 +493,30 @@ def _ask_choice(
         else f"Current {label}"
     )
 
-    # When a matching preset exists but has no note, the "= K" pointer to that
-    # numbered entry is enough — no need to repeat the value in trailing parens.
-    if current_matching_index is not None and not current_note:
-        current_display = ""
+    # What to show in the trailing parens: prefer the matching preset's note
+    # (aligns with the note column above), fall back to its label (keeps
+    # display-name casing and any parenthesised annotation like "(Claude)"),
+    # otherwise show a preview of the raw value.
+    if current_matching_index is not None:
+        matching_label, _, matching_note = presets[current_matching_index - 1]
+        current_display = matching_note or matching_label
     else:
-        current_display = current_note or current_preview
+        current_display = current_preview
 
-    # Only pad the label column when at least one preset has a note to align to;
-    # otherwise the current line ends up with a huge blank gap between the label
-    # and the trailing parens.
+    # Pad the label column only when at least one preset has a note to align
+    # to; a note-less list (e.g. the provider picker) would otherwise get a
+    # huge blank gap between the padded label and the trailing parens.
     have_any_note = any(note for _, _, note in presets)
     width = max([len(l) for l in labels] + [len(current_label)]) if have_any_note else 0
 
     for index, (preset_label, _, note) in enumerate(presets, start=1):
         suffix = f"  ({note})" if note else ""
         ui.info(f"    {index}) {preset_label:<{width}}{suffix}".rstrip())
-    if current_display:
-        ui.info(f"    {current_index}) {current_label:<{width}}  ({current_display})")
-    else:
-        ui.info(f"    {current_index}) {current_label:<{width}}".rstrip())
+    ui.info(f"    {current_index}) {current_label:<{width}}  ({current_display})")
 
     for _ in range(MAX_PROMPT_RETRIES):
         answer = _ask(
-            f"    Enter 1-{current_index} or type any {label}",
+            f"Enter 1-{current_index} or type any {label}",
             str(default_index),
         ).strip()
         if answer.isdigit():
@@ -527,7 +525,7 @@ def _ask_choice(
                 return presets[number - 1][1]
             if number == current_index:
                 return current
-            ui.warn(f"    Choice must be 1-{current_index}, please try again.")
+            ui.warn(f"Choice must be 1-{current_index}, please try again.")
             continue
         return answer  # custom value
     raise WizardAborted(f"{label}: too many invalid answers, giving up.")
@@ -864,7 +862,7 @@ def _prompt_compat_endpoint(target: dict[str, Any]) -> str | None:
 
     prompt_hint = current_label or str(len(presets) + 1)
     for _ in range(MAX_PROMPT_RETRIES):
-        answer = _ask(f"    Enter 1-{len(presets) + 1} or type any base URL", prompt_hint)
+        answer = _ask(f"Enter 1-{len(presets) + 1} or type any base URL", prompt_hint)
         answer = answer.strip()
         if not answer:
             continue
@@ -878,7 +876,7 @@ def _prompt_compat_endpoint(target: dict[str, Any]) -> str | None:
             if number == len(presets) + 1:
                 # Keep current base URL; model prompt handled by the caller.
                 return None
-            ui.warn(f"    Choice must be 1-{len(presets) + 1}; try again.")
+            ui.warn(f"Choice must be 1-{len(presets) + 1}; try again.")
             continue
         # Try preset by label first, otherwise treat as a raw URL.
         if answer.lower() in COMPAT_PRESETS:

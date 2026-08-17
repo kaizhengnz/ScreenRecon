@@ -100,7 +100,7 @@ PROMPT_CHOICES: list[tuple[str, str, str]] = [
     (
         "answer",
         "Read the question in this screenshot and answer it.",
-        "answer a question in the image",
+        "answer the question in the image",
     ),
     (
         "translate_english",
@@ -483,10 +483,17 @@ def _ask_choice(
                 default_index = index
                 break
 
+    current_note = ""
+    for _, preset_value, note in presets:
+        if preset_value == current and note:
+            current_note = note
+            break
+    current_display = current_note or current_preview
+
     for index, (preset_label, _, note) in enumerate(presets, start=1):
         suffix = f"  ({note})" if note else ""
         ui.info(f"    {index}) {preset_label:<{width}}{suffix}".rstrip())
-    ui.info(f"    {current_index}) (keep current — {current_preview})")
+    ui.info(f"    {current_index}) Current {label} ({current_display})")
 
     for _ in range(MAX_PROMPT_RETRIES):
         answer = _ask(
@@ -865,7 +872,7 @@ def _prompt_compat_endpoint(target: dict[str, Any]) -> str | None:
 
 def _ask_prompt(current: str) -> str:
     """Numbered picker over :data:`PROMPT_CHOICES`; Enter keeps ``current``."""
-    return _ask_choice("default prompt", PROMPT_CHOICES, current)
+    return _ask_choice("prompt", PROMPT_CHOICES, current)
 
 
 def run_set_prompt(path: str | os.PathLike[str] | None = None) -> int:

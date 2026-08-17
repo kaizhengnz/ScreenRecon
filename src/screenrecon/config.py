@@ -473,7 +473,6 @@ def _ask_choice(
     """
     current_index = len(presets) + 1
     labels = [preset_label for preset_label, _, _ in presets]
-    width = max(len(preset_label) for preset_label in labels) if labels else 0
     current_preview = current if len(current) <= 60 else current[:57] + "..."
 
     default_index = current_index
@@ -483,17 +482,27 @@ def _ask_choice(
                 default_index = index
                 break
 
+    current_matching_index: int | None = None
     current_note = ""
-    for _, preset_value, note in presets:
-        if preset_value == current and note:
-            current_note = note
+    for index, (_, preset_value, note) in enumerate(presets, start=1):
+        if preset_value == current:
+            current_matching_index = index
+            if note:
+                current_note = note
             break
     current_display = current_note or current_preview
+    current_label = (
+        f"Current {label} = {current_matching_index}"
+        if current_matching_index is not None
+        else f"Current {label}"
+    )
+
+    width = max([len(l) for l in labels] + [len(current_label)]) if labels else len(current_label)
 
     for index, (preset_label, _, note) in enumerate(presets, start=1):
         suffix = f"  ({note})" if note else ""
         ui.info(f"    {index}) {preset_label:<{width}}{suffix}".rstrip())
-    ui.info(f"    {current_index}) Current {label} ({current_display})")
+    ui.info(f"    {current_index}) {current_label:<{width}}  ({current_display})")
 
     for _ in range(MAX_PROMPT_RETRIES):
         answer = _ask(

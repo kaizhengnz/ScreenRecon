@@ -174,18 +174,11 @@ def test_prompt_choice_by_number_returns_the_prompt_text(answers):
     assert result != config.PROMPT_CHOICES[0][0]
 
 
-def test_prompt_choice_enter_keeps_current_when_not_default(answers):
-    """Enter maps to "keep current" when the current value is not one of the shipped picks."""
+def test_prompt_choice_enter_keeps_current(answers):
+    """Enter maps to "keep current" regardless of what the current value is."""
     scripted, _ = answers
     scripted.append("")
     assert config._ask_prompt("my custom prompt") == "my custom prompt"
-
-
-def test_prompt_choice_enter_lands_on_describe_when_current_matches_default(answers):
-    """Fresh install: DEFAULT_PROMPT is option 1 (describe), Enter picks it."""
-    scripted, _ = answers
-    scripted.append("")
-    assert config._ask_prompt(config.DEFAULT_PROMPT) == config.DEFAULT_PROMPT
 
 
 def test_prompt_choice_typed_text_becomes_a_custom_value(answers):

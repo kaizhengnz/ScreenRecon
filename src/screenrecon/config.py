@@ -125,8 +125,7 @@ PROMPT_CHOICES: list[tuple[str, str, str]] = [
 ]
 """Starter prompts offered by the wizard as numbered picks. The label is a
 short synonym for the numbered list; the value is the prompt string that
-lands in the config. ``describe`` deliberately points at :data:`DEFAULT_PROMPT`
-so a fresh Enter maps to option 1."""
+lands in the config."""
 
 
 DEFAULTS: dict[str, Any] = {
@@ -864,6 +863,11 @@ def _prompt_compat_endpoint(target: dict[str, Any]) -> str | None:
     raise WizardAborted("Endpoint URL: too many invalid answers, giving up.")
 
 
+def _ask_prompt(current: str) -> str:
+    """Numbered picker over :data:`PROMPT_CHOICES`; Enter keeps ``current``."""
+    return _ask_choice("default prompt", PROMPT_CHOICES, current)
+
+
 def run_set_prompt(path: str | os.PathLike[str] | None = None) -> int:
     """Pick a new default prompt and save it; leave every other field alone."""
     def setter(raw: dict[str, Any]) -> None:
@@ -871,17 +875,6 @@ def run_set_prompt(path: str | os.PathLike[str] | None = None) -> int:
         raw["prompt"] = _ask_prompt(current)
 
     return _run_single_field_setter(path, "ScreenRecon set default prompt", setter)
-
-
-def _ask_prompt(current: str) -> str:
-    """Wrap :func:`_ask_choice` with the shipped :data:`PROMPT_CHOICES` list.
-
-    No ``default=`` — Enter always maps to "keep current" so a user who has
-    already tuned the prompt does not lose it by pressing Enter through the
-    wizard. On a fresh install the current value is :data:`DEFAULT_PROMPT`
-    (matching option 1 ``describe``), so Enter still lands there.
-    """
-    return _ask_choice("default prompt", PROMPT_CHOICES, current)
 
 
 def run_set_dwell(path: str | os.PathLike[str] | None = None) -> int:

@@ -273,7 +273,7 @@ def test_wizard_keeps_current_region_when_user_declines_the_picker(
                 "telegram_chat_id": "old-chat",
                 "save_dir": str(tmp_path),
                 "prompt": "p",
-                        "dwell_seconds": 3,
+                "dwell_seconds": 3,
                 "model": "claude-opus-5",
             }
         ),
@@ -348,7 +348,7 @@ def test_wizard_keeps_current_region_when_picker_cannot_open(
                 "telegram_chat_id": "old-chat",
                 "save_dir": str(tmp_path),
                 "prompt": "p",
-                        "dwell_seconds": 3,
+                "dwell_seconds": 3,
                 "model": "claude-opus-5",
             }
         ),

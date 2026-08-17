@@ -173,9 +173,7 @@ def test_ask_without_a_question_is_interactive(config_file, calls):
         ["--show", "--configure"],
         ["--show", "--screen"],
         ["--show", "ask", "q"],
-        # Inline --prompt is a runtime override; combining with a setter is an error.
         ["--prompt", "text", "--dwell"],
-        # Inline --prompt is not compatible with --show either.
         ["--show", "--prompt", "text"],
     ],
 )

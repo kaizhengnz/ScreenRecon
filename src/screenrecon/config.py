@@ -91,6 +91,43 @@ preset label or a custom base URL; when a label is picked, the default
 model is pre-filled but still editable. Endpoints verified against each
 provider's compat-mode docs at the time of writing (2026-08)."""
 
+PROMPT_CHOICES: list[tuple[str, str, str]] = [
+    (
+        "describe",
+        DEFAULT_PROMPT,
+        "recognition or OCR",
+    ),
+    (
+        "answer",
+        "Read the question in this screenshot and answer it.",
+        "answer the question in the image",
+    ),
+    (
+        "translate_english",
+        "Translate the text in this screenshot into English. Preserve line breaks and formatting.",
+        "translate to English",
+    ),
+    (
+        "find_errors",
+        "Find the error messages in this screenshot and explain the likely cause. If a fix is obvious, suggest it in one line.",
+        "error diagnosis",
+    ),
+    (
+        "table_to_csv",
+        "Transcribe this table as CSV. Include the header row and preserve column order.",
+        "table → CSV",
+    ),
+    (
+        "extract_text",
+        "Transcribe every legible piece of text in this screenshot verbatim. No summarising, no rewriting.",
+        "verbatim OCR",
+    ),
+]
+"""Starter prompts offered by the wizard as numbered picks. The label is a
+short synonym for the numbered list; the value is the prompt string that
+lands in the config."""
+
+
 DEFAULTS: dict[str, Any] = {
     "region": {"left": 100, "top": 100, "width": 600, "height": 400},
     # provider: empty means "infer from model prefix"; the dispatcher falls
@@ -436,7 +473,6 @@ def _ask_choice(
     """
     current_index = len(presets) + 1
     labels = [preset_label for preset_label, _, _ in presets]
-    width = max(len(preset_label) for preset_label in labels) if labels else 0
     current_preview = current if len(current) <= 60 else current[:57] + "..."
 
     default_index = current_index
@@ -446,14 +482,41 @@ def _ask_choice(
                 default_index = index
                 break
 
+    current_matching_index: int | None = None
+    for index, (_, preset_value, _) in enumerate(presets, start=1):
+        if preset_value == current:
+            current_matching_index = index
+            break
+    current_label = (
+        f"Current {label} = {current_matching_index}"
+        if current_matching_index is not None
+        else f"Current {label}"
+    )
+
+    # What to show in the trailing parens: prefer the matching preset's note
+    # (aligns with the note column above), fall back to its label (keeps
+    # display-name casing and any parenthesised annotation like "(Claude)"),
+    # otherwise show a preview of the raw value.
+    if current_matching_index is not None:
+        matching_label, _, matching_note = presets[current_matching_index - 1]
+        current_display = matching_note or matching_label
+    else:
+        current_display = current_preview
+
+    # Pad the label column only when at least one preset has a note to align
+    # to; a note-less list (e.g. the provider picker) would otherwise get a
+    # huge blank gap between the padded label and the trailing parens.
+    have_any_note = any(note for _, _, note in presets)
+    width = max([len(l) for l in labels] + [len(current_label)]) if have_any_note else 0
+
     for index, (preset_label, _, note) in enumerate(presets, start=1):
         suffix = f"  ({note})" if note else ""
         ui.info(f"    {index}) {preset_label:<{width}}{suffix}".rstrip())
-    ui.info(f"    {current_index}) (keep current — {current_preview})")
+    ui.info(f"    {current_index}) {current_label:<{width}}  ({current_display})")
 
     for _ in range(MAX_PROMPT_RETRIES):
         answer = _ask(
-            f"    Enter 1-{current_index} or type any {label}",
+            f"Enter 1-{current_index} or type any {label}",
             str(default_index),
         ).strip()
         if answer.isdigit():
@@ -462,7 +525,7 @@ def _ask_choice(
                 return presets[number - 1][1]
             if number == current_index:
                 return current
-            ui.warn(f"    Choice must be 1-{current_index}, please try again.")
+            ui.warn(f"Choice must be 1-{current_index}, please try again.")
             continue
         return answer  # custom value
     raise WizardAborted(f"{label}: too many invalid answers, giving up.")
@@ -799,7 +862,7 @@ def _prompt_compat_endpoint(target: dict[str, Any]) -> str | None:
 
     prompt_hint = current_label or str(len(presets) + 1)
     for _ in range(MAX_PROMPT_RETRIES):
-        answer = _ask(f"    Enter 1-{len(presets) + 1} or type any base URL", prompt_hint)
+        answer = _ask(f"Enter 1-{len(presets) + 1} or type any base URL", prompt_hint)
         answer = answer.strip()
         if not answer:
             continue
@@ -813,7 +876,7 @@ def _prompt_compat_endpoint(target: dict[str, Any]) -> str | None:
             if number == len(presets) + 1:
                 # Keep current base URL; model prompt handled by the caller.
                 return None
-            ui.warn(f"    Choice must be 1-{len(presets) + 1}; try again.")
+            ui.warn(f"Choice must be 1-{len(presets) + 1}; try again.")
             continue
         # Try preset by label first, otherwise treat as a raw URL.
         if answer.lower() in COMPAT_PRESETS:
@@ -826,11 +889,16 @@ def _prompt_compat_endpoint(target: dict[str, Any]) -> str | None:
     raise WizardAborted("Endpoint URL: too many invalid answers, giving up.")
 
 
+def _ask_prompt(current: str) -> str:
+    """Numbered picker over :data:`PROMPT_CHOICES`; Enter keeps ``current``."""
+    return _ask_choice("prompt", PROMPT_CHOICES, current)
+
+
 def run_set_prompt(path: str | os.PathLike[str] | None = None) -> int:
-    """Prompt for a new default prompt string and save it; leave every other field alone."""
+    """Pick a new default prompt and save it; leave every other field alone."""
     def setter(raw: dict[str, Any]) -> None:
         current = str(raw.get("prompt", DEFAULT_PROMPT))
-        raw["prompt"] = _ask("  default prompt", current)
+        raw["prompt"] = _ask_prompt(current)
 
     return _run_single_field_setter(path, "ScreenRecon set default prompt", setter)
 
@@ -988,8 +1056,7 @@ def _run_wizard(
     _prompt_provider_and_model(cfg)
 
     ui.info("\n4) Default prompt")
-    ui.info("   The system prompt sent with every capture. See examples/prompts.json in the repo for starter prompts you can copy.")
-    cfg["prompt"] = _ask("  default prompt", str(cfg["prompt"]))
+    cfg["prompt"] = _ask_prompt(str(cfg["prompt"]))
 
     ui.info("\n5) Credentials")
     ui.info(

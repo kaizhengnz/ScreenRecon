@@ -87,7 +87,7 @@ API 调用失败时 `ask` 会以非零状态退出，所以 `screenrecon ask "..
 否则为 `~/.config/screenrecon/config.json`。在 macOS 和 Linux 上，该文件及其目录以
 仅属主可访问的权限创建（`0600` / `0700`）。
 
-系统提示词是单个字符串 —— `prompt` —— 通过 `--configure` 或 `--prompt` 设置一次；或用 `--prompt "..."` 只在本次运行中临时替换。要浏览可以复制的现成提示词，见 [`examples/prompts.json`](examples/prompts.json)。
+系统提示词是单个字符串 —— `prompt` —— 通过 `--configure` 或 `--prompt` 设置一次（带编号菜单，出厂自带若干备选，也可以直接输入自定义文本）；或用 `--prompt "..."` 只在本次运行中临时替换。
 
 ```json
 {

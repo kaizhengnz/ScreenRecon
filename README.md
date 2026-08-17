@@ -92,7 +92,7 @@ Default location: `$XDG_CONFIG_HOME/screenrecon/config.json` if that variable is
 set, otherwise `~/.config/screenrecon/config.json`. On macOS and Linux the file
 and its directory are created owner-only (`0600` / `0700`).
 
-The system prompt is a single string — `prompt` — set once via `--configure` or `--prompt`, or supplied ad-hoc for one run via `--prompt "..."`. For a browsable list of ready-made prompts to copy from, see [`examples/prompts.json`](examples/prompts.json).
+The system prompt is a single string — `prompt` — set once via `--configure` or `--prompt` (a numbered picker with a shipped shortlist plus type-any-text), or supplied ad-hoc for one run via `--prompt "..."`.
 
 ```json
 {

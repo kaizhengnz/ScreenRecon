@@ -91,54 +91,6 @@ preset label or a custom base URL; when a label is picked, the default
 model is pre-filled but still editable. Endpoints verified against each
 provider's compat-mode docs at the time of writing (2026-08)."""
 
-CODE_PROMPT_TEMPLATE = (
-    "Read the problem in this screenshot and write {language} code that solves it."
-)
-"""Prompt stored for the ``code`` preset once a language is substituted in."""
-
-DEFAULT_CODE_LANGUAGE = "Python"
-
-LANGUAGE_CHOICES: list[tuple[str, str, str]] = [
-    (language, language, "")
-    for language in (
-        DEFAULT_CODE_LANGUAGE,
-        "C#",
-        "Java",
-        "TypeScript",
-        "JavaScript",
-        "Go",
-        "C++",
-        "Rust",
-    )
-]
-"""Languages offered after the ``code`` preset. Label and value are the same
-string, and any other language can be typed in — the note column stays empty
-because a language name explains itself."""
-
-PROMPT_CHOICES: list[tuple[str, str, str]] = [
-    (
-        "describe",
-        "Describe what is in this screenshot. Be concise and lead with the key information.",
-        "recognition or OCR",
-    ),
-    (
-        "answer",
-        "Read the question in this screenshot and answer it.",
-        "answer questions in the image",
-    ),
-    (
-        "code",
-        CODE_PROMPT_TEMPLATE,
-        "write code",
-    ),
-]
-"""Built-in prompt presets. Same ``(label, value, note)`` shape as the entries
-in :data:`MODEL_CHOICES_BY_PROVIDER`.
-
-The ``code`` entry is the one preset whose value is a template rather than a
-finished prompt: :func:`_ask_prompt` asks which language and substitutes it,
-so what lands in the config is committed to one language."""
-
 DEFAULTS: dict[str, Any] = {
     "region": {"left": 100, "top": 100, "width": 600, "height": 400},
     # provider: empty means "infer from model prefix"; the dispatcher falls
@@ -151,10 +103,14 @@ DEFAULTS: dict[str, Any] = {
     "telegram_chat_id": "",
     "save_dir": DEFAULT_SAVE_DIR,
     "prompt": DEFAULT_PROMPT,
-    "prompts": {},
     "dwell_seconds": 3,
     "model": DEFAULT_MODEL,
 }
+
+LEGACY_PROMPTS_FIELD = "prompts"
+"""Pre-SR-36 configs stored named prompt presets here for --mode NAME. Both
+are gone — merge_defaults drops the field on read, and save omits it on the
+next write. Kept as a constant so a search finds the migration site."""
 
 CREDENTIAL_FIELDS = ("api_key", "telegram_bot_token", "telegram_chat_id")
 
@@ -216,23 +172,23 @@ def read_raw(path: Path) -> dict[str, Any]:
 
 
 def merge_defaults(raw: dict[str, Any]) -> dict[str, Any]:
-    """Merge with defaults; ``region`` / ``prompts`` are merged one level deep.
+    """Merge with defaults; ``region`` is merged one level deep.
 
     Also migrates the pre-SR-23 ``anthropic_api_key`` field into ``api_key``
     when the new field is absent, so a config from 0.1.5 keeps working
     unchanged until the user runs any setter (which then rewrites without
     the legacy field). This migration happens in memory only — the file
-    on disk is untouched until the next explicit save.
+    on disk is untouched until the next explicit save. The pre-SR-36
+    ``prompts`` dict is dropped the same way.
     """
     merged: dict[str, Any] = dict(DEFAULTS)
     merged["region"] = dict(DEFAULTS["region"])
-    merged["prompts"] = {}
 
     for key, value in raw.items():
+        if key == LEGACY_PROMPTS_FIELD:
+            continue
         if key == "region" and isinstance(value, dict):
             merged["region"].update(value)
-        elif key == "prompts" and isinstance(value, dict):
-            merged["prompts"] = dict(value)
         else:
             merged[key] = value
 
@@ -274,8 +230,10 @@ def save(cfg: dict[str, Any], path: str | os.PathLike[str] | None = None) -> Pat
     for key, value in cfg.items():
         if key.startswith("_"):
             continue
-        # Drop the legacy field once the new one carries the same value.
+        # Drop legacy fields on write so old configs converge on the new schema.
         if key == LEGACY_API_KEY_FIELD and str(cfg.get("api_key") or "").strip():
+            continue
+        if key == LEGACY_PROMPTS_FIELD:
             continue
         payload[key] = value
     text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
@@ -334,13 +292,6 @@ def validate_config(cfg: dict[str, Any]) -> None:
         if not isinstance(value, str) or not value.strip():
             raise ConfigError(f"Config field '{field}' must be a non-empty string, got {value!r}")
 
-    prompts = cfg.get("prompts")
-    if not isinstance(prompts, dict):
-        raise ConfigError('Config field \'prompts\' must be an object, e.g. {"log": "Find errors"}')
-    for name, value in prompts.items():
-        if not isinstance(value, str) or not value.strip():
-            raise ConfigError(f"Config field 'prompts.{name}' must be a non-empty string")
-
     for field in CREDENTIAL_FIELDS:
         value = cfg.get(field)
         if value is not None and not isinstance(value, str):
@@ -381,19 +332,6 @@ def require_credentials(cfg: dict[str, Any]) -> None:
             "Not configured yet: " + ", ".join(missing) + ".\n"
             "Run 'screenrecon --configure' to set them."
         )
-
-
-def resolve_prompt(cfg: dict[str, Any], mode: str | None) -> str:
-    """Resolve --mode to a prompt preset (FR-13); falls back to the default prompt."""
-    if mode is None:
-        return str(cfg["prompt"])
-    prompts: dict[str, str] = cfg.get("prompts") or {}
-    if mode in prompts:
-        return str(prompts[mode])
-    if mode == "default":
-        return str(cfg["prompt"])
-    available = ", ".join(sorted(prompts)) or "(no presets defined in config)"
-    raise ConfigError(f"No prompt preset named {mode!r}. Available presets: {available}")
 
 
 # --------------------------------------------------------------------------- #
@@ -528,36 +466,6 @@ def _ask_choice(
             continue
         return answer  # custom value
     raise WizardAborted(f"{label}: too many invalid answers, giving up.")
-
-
-def _code_language_of(prompt: str) -> str:
-    """Recover the language from a saved code prompt, or fall back to the default.
-
-    Lets the language follow-up offer "keep current — Go" when the config
-    already holds a code prompt, instead of pretending every rerun starts from
-    Python.
-    """
-    prefix, _, suffix = CODE_PROMPT_TEMPLATE.partition("{language}")
-    if prompt.startswith(prefix) and prompt.endswith(suffix):
-        language = prompt[len(prefix) : len(prompt) - len(suffix)]
-        if language:
-            return language
-    return DEFAULT_CODE_LANGUAGE
-
-
-def _ask_prompt(current: str) -> str:
-    """Pick the default prompt, asking which language when ``code`` is chosen.
-
-    Every other preset stores exactly what :func:`_ask_choice` returns; ``code``
-    returns a template, and the follow-up is what turns it into a prompt
-    committed to one language rather than leaving the model to guess.
-    """
-    chosen = _ask_choice("default prompt", PROMPT_CHOICES, current, default=DEFAULT_PROMPT)
-    if chosen != CODE_PROMPT_TEMPLATE:
-        return chosen
-
-    language = _ask_choice("language", LANGUAGE_CHOICES, _code_language_of(current))
-    return CODE_PROMPT_TEMPLATE.format(language=language)
 
 
 def _prompt_region(
@@ -919,10 +827,10 @@ def _prompt_compat_endpoint(target: dict[str, Any]) -> str | None:
 
 
 def run_set_prompt(path: str | os.PathLike[str] | None = None) -> int:
-    """Pick a new default prompt and save it; leave every other field alone."""
+    """Prompt for a new default prompt string and save it; leave every other field alone."""
     def setter(raw: dict[str, Any]) -> None:
         current = str(raw.get("prompt", DEFAULT_PROMPT))
-        raw["prompt"] = _ask_prompt(current)
+        raw["prompt"] = _ask("  default prompt", current)
 
     return _run_single_field_setter(path, "ScreenRecon set default prompt", setter)
 
@@ -1003,8 +911,6 @@ def run_show(path: str | os.PathLike[str] | None = None) -> int:
     if provider.name == "openai_compatible":
         ui.info(f"  Base URL:        {cfg.get('base_url') or '(unset)'}")
     ui.info(f"  Default prompt:  {cfg['prompt']}")
-    presets = sorted((cfg.get("prompts") or {}).keys())
-    ui.info(f"  Prompt presets:  {', '.join(presets) if presets else '(none)'}")
     ui.info(f"  Save directory:  {cfg['save_dir']}")
     ui.info(f"  API key:         {ui.mask(str(cfg.get('api_key') or ''))}")
     ui.info(f"  Telegram bot:    {ui.mask(str(cfg['telegram_bot_token']))}")
@@ -1082,7 +988,8 @@ def _run_wizard(
     _prompt_provider_and_model(cfg)
 
     ui.info("\n4) Default prompt")
-    cfg["prompt"] = _ask_prompt(str(cfg["prompt"]))
+    ui.info("   The system prompt sent with every capture. See examples/prompts.json in the repo for starter prompts you can copy.")
+    cfg["prompt"] = _ask("  default prompt", str(cfg["prompt"]))
 
     ui.info("\n5) Credentials")
     ui.info(

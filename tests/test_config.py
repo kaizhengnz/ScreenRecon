@@ -23,7 +23,6 @@ def valid_payload(**overrides):
         "telegram_chat_id": "987654321",
         "save_dir": "~/ScreenRecon",
         "prompt": "Describe this screenshot.",
-        "prompts": {"log": "Find the error and explain it."},
         "dwell_seconds": 3,
         "model": "claude-opus-5",
     }
@@ -212,26 +211,26 @@ def test_save_drops_the_legacy_field_once_api_key_is_populated(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# Prompt presets (FR-13)
+# Legacy prompts field migration (SR-36)
 # --------------------------------------------------------------------------- #
 
 
-def test_mode_selects_preset():
-    cfg = config.merge_defaults(valid_payload())
-    assert config.resolve_prompt(cfg, "log") == "Find the error and explain it."
+def test_legacy_prompts_field_is_dropped_on_read():
+    """The pre-SR-36 named-preset dict is stripped in memory so no code path sees it."""
+    cfg = config.merge_defaults(
+        valid_payload(prompts={"log": "old preset"})
+    )
+    assert "prompts" not in cfg
 
 
-def test_no_mode_uses_default_prompt():
-    cfg = config.merge_defaults(valid_payload())
-    assert config.resolve_prompt(cfg, None) == "Describe this screenshot."
-    assert config.resolve_prompt(cfg, "default") == "Describe this screenshot."
-
-
-def test_unknown_mode_lists_available_presets():
-    cfg = config.merge_defaults(valid_payload())
-    with pytest.raises(config.ConfigError) as excinfo:
-        config.resolve_prompt(cfg, "nope")
-    assert "log" in str(excinfo.value)
+def test_legacy_prompts_field_is_dropped_on_save(tmp_path):
+    """The pre-SR-36 dict is not rewritten to disk after the first save."""
+    path = tmp_path / "config.json"
+    payload = valid_payload()
+    payload["prompts"] = {"log": "old preset"}
+    config.save(payload, path)
+    on_disk = json.loads(path.read_text(encoding="utf-8"))
+    assert "prompts" not in on_disk
 
 
 # --------------------------------------------------------------------------- #

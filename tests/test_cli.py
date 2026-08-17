@@ -15,7 +15,6 @@ CONFIG = {
     "telegram_chat_id": "987654321",
     "save_dir": "~/ScreenRecon",
     "prompt": "default prompt",
-    "prompts": {"log": "find errors"},
     "dwell_seconds": 3,
     "model": "claude-opus-5",
 }
@@ -72,9 +71,27 @@ def test_debug_flag_is_forwarded_to_the_watch_loop(config_file, calls):
     assert calls["debug"] is True
 
 
-def test_mode_selects_the_preset(config_file, calls):
-    assert cli.main(["--config", config_file, "--mode", "log"]) == 0
-    assert calls["watch"] == "find errors"
+def test_inline_prompt_replaces_the_default_for_this_run(config_file, calls):
+    assert cli.main(["--config", config_file, "--prompt", "translate please"]) == 0
+    assert calls["watch"] == "translate please"
+
+
+def test_inline_prompt_with_ask_becomes_the_question(config_file, calls):
+    assert cli.main(["--config", config_file, "--prompt", "look for errors", "ask"]) == 0
+    assert calls["ask"] == "look for errors"
+
+
+def test_inline_prompt_yields_to_positional_ask_question(config_file, calls):
+    assert cli.main(
+        ["--config", config_file, "--prompt", "look for errors", "ask", "no", "actually", "translate"]
+    ) == 0
+    assert calls["ask"] == "no actually translate"
+
+
+def test_bare_prompt_runs_the_setter(config_file, calls):
+    assert cli.main(["--config", config_file, "--prompt"]) == 0
+    assert calls["set_prompt"] == config_file
+    assert "watch" not in calls
 
 
 def test_configure_runs_the_wizard(config_file, calls):
@@ -103,7 +120,6 @@ def test_model_sets_only_the_model(config_file, calls):
 @pytest.mark.parametrize(
     ("flag", "recorded_key"),
     [
-        ("--prompt", "set_prompt"),
         ("--dwell", "set_dwell"),
         ("--save-dir", "set_save_dir"),
         ("--telegram", "set_telegram"),
@@ -133,11 +149,6 @@ def test_ask_without_a_question_is_interactive(config_file, calls):
     assert calls["ask"] is None
 
 
-def test_ask_with_a_mode_uses_the_preset_as_the_question(config_file, calls):
-    assert cli.main(["--config", config_file, "--mode", "log", "ask"]) == 0
-    assert calls["ask"] == "find errors"
-
-
 # --------------------------------------------------------------------------- #
 # Rejected combinations
 # --------------------------------------------------------------------------- #
@@ -147,10 +158,8 @@ def test_ask_with_a_mode_uses_the_preset_as_the_question(config_file, calls):
     "argv",
     [
         ["--configure", "ask", "q"],
-        ["--mode", "log", "--configure"],
         ["--screen", "--configure"],
         ["--screen", "--debug"],
-        ["--screen", "--mode", "log"],
         ["--screen", "ask", "q"],
         ["--key", "--configure"],
         ["--model", "--debug"],
@@ -164,24 +173,16 @@ def test_ask_with_a_mode_uses_the_preset_as_the_question(config_file, calls):
         ["--show", "--configure"],
         ["--show", "--screen"],
         ["--show", "ask", "q"],
+        # Inline --prompt is a runtime override; combining with a setter is an error.
+        ["--prompt", "text", "--dwell"],
+        # Inline --prompt is not compatible with --show either.
+        ["--show", "--prompt", "text"],
     ],
 )
 def test_conflicting_flags_exit_two(argv):
     with pytest.raises(SystemExit) as excinfo:
         cli.main(argv)
     assert excinfo.value.code == 2
-
-
-def test_unknown_mode_is_an_error_when_watching(config_file, calls):
-    assert cli.main(["--config", config_file, "--mode", "nope"]) == 1
-    assert "watch" not in calls
-
-
-def test_unknown_mode_is_an_error_for_ask_too(config_file, calls, capsys):
-    """A typo must not silently fall back to the default prompt."""
-    assert cli.main(["--config", config_file, "--mode", "nope", "ask", "q"]) == 1
-    assert "ask" not in calls
-    assert "nope" in capsys.readouterr().err
 
 
 # --------------------------------------------------------------------------- #

@@ -165,78 +165,6 @@ def test_choice_gives_up_after_repeated_invalid_answers(answers):
         )
 
 
-def test_prompt_choice_by_number_returns_the_prompt_text(answers):
-    """Prompt presets store a short label and a full prompt string; picking 1
-    returns the full text, not the label.
-    """
-    scripted, _ = answers
-    scripted.append("1")
-    result = config._ask_choice(
-        "default prompt", config.PROMPT_CHOICES, "old current prompt"
-    )
-    assert result == config.PROMPT_CHOICES[0][1]
-    assert result != config.PROMPT_CHOICES[0][0]  # not the label
-
-
-def test_prompt_choice_enter_keeps_current(answers):
-    scripted, _ = answers
-    scripted.append("")
-    assert (
-        config._ask_choice("default prompt", config.PROMPT_CHOICES, "my custom prompt")
-        == "my custom prompt"
-    )
-
-
-def test_code_preset_asks_for_a_language_and_bakes_it_in(answers):
-    """The code preset stores a template; the follow-up commits it to one language."""
-    scripted, used = answers
-    code_index = [label for label, _, _ in config.PROMPT_CHOICES].index("code") + 1
-    go_index = [label for label, _, _ in config.LANGUAGE_CHOICES].index("Go") + 1
-    scripted.extend([str(code_index), str(go_index)])
-
-    result = config._ask_prompt("old current prompt")
-
-    assert result == config.CODE_PROMPT_TEMPLATE.format(language="Go")
-    assert "{language}" not in result
-    assert len(used) == 2  # the preset question, then the language question
-
-
-def test_code_preset_accepts_a_typed_language(answers):
-    scripted, _ = answers
-    code_index = [label for label, _, _ in config.PROMPT_CHOICES].index("code") + 1
-    scripted.extend([str(code_index), "Elixir"])
-
-    assert config._ask_prompt("old current prompt") == config.CODE_PROMPT_TEMPLATE.format(
-        language="Elixir"
-    )
-
-
-def test_non_code_preset_asks_nothing_extra(answers):
-    scripted, used = answers
-    scripted.append("1")
-
-    assert config._ask_prompt("old current prompt") == config.PROMPT_CHOICES[0][1]
-    assert len(used) == 1
-
-
-def test_code_language_follow_up_offers_the_saved_language_as_current(answers):
-    """Rerunning --prompt on an existing code prompt keeps that language on Enter."""
-    scripted, _ = answers
-    code_index = [label for label, _, _ in config.PROMPT_CHOICES].index("code") + 1
-    keep_current = str(len(config.LANGUAGE_CHOICES) + 1)
-    scripted.extend([str(code_index), keep_current])
-
-    saved = config.CODE_PROMPT_TEMPLATE.format(language="Rust")
-
-    assert config._ask_prompt(saved) == saved
-
-
-def test_code_language_of_ignores_unrelated_prompts():
-    assert config._code_language_of("Transcribe this table as CSV.") == (
-        config.DEFAULT_CODE_LANGUAGE
-    )
-
-
 def test_minimum_is_enforced(answers):
     scripted, _ = answers
     scripted.extend(["0", "-5", "800"])
@@ -345,8 +273,7 @@ def test_wizard_keeps_current_region_when_user_declines_the_picker(
                 "telegram_chat_id": "old-chat",
                 "save_dir": str(tmp_path),
                 "prompt": "p",
-                "prompts": {},
-                "dwell_seconds": 3,
+                        "dwell_seconds": 3,
                 "model": "claude-opus-5",
             }
         ),
@@ -421,8 +348,7 @@ def test_wizard_keeps_current_region_when_picker_cannot_open(
                 "telegram_chat_id": "old-chat",
                 "save_dir": str(tmp_path),
                 "prompt": "p",
-                "prompts": {},
-                "dwell_seconds": 3,
+                        "dwell_seconds": 3,
                 "model": "claude-opus-5",
             }
         ),
@@ -493,7 +419,6 @@ def test_set_region_updates_only_the_region_field(tmp_path):
         "telegram_chat_id": "old-chat",
         "save_dir": str(tmp_path),
         "prompt": "keep me",
-        "prompts": {"log": "find errors"},
         "dwell_seconds": 2.5,
         "model": "claude-opus-5",
     }
@@ -587,7 +512,6 @@ def test_set_key_updates_only_the_key(tmp_path, answers):
         "telegram_chat_id": "old-chat",
         "save_dir": str(tmp_path),
         "prompt": "keep me",
-        "prompts": {"log": "find errors"},
         "dwell_seconds": 2.5,
         "model": "claude-opus-5",
     }
@@ -687,7 +611,6 @@ def test_set_model_updates_only_the_model(tmp_path, answers):
         "telegram_chat_id": "old-chat",
         "save_dir": str(tmp_path),
         "prompt": "keep me",
-        "prompts": {},
         "dwell_seconds": 2.5,
         "model": "claude-opus-5",
     }
@@ -722,7 +645,6 @@ def _existing_config():
         "telegram_chat_id": "old-chat",
         "save_dir": "/keep/me",
         "prompt": "keep me",
-        "prompts": {"log": "find errors"},
         "dwell_seconds": 2.5,
         "model": "claude-opus-5",
     }
@@ -732,11 +654,11 @@ def test_set_prompt_updates_only_the_prompt(tmp_path, answers):
     scripted, _ = answers
     path = tmp_path / "config.json"
     path.write_text(json.dumps(_existing_config()), encoding="utf-8")
-    scripted.append("2")  # PROMPT_CHOICES[1] — "answer"
+    scripted.append("Find bugs in the screenshot.")
 
     assert config.run_set_prompt(path) == 0
     saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved["prompt"] == config.PROMPT_CHOICES[1][1]
+    assert saved["prompt"] == "Find bugs in the screenshot."
     for key, value in _existing_config().items():
         if key == "prompt":
             continue
@@ -812,7 +734,6 @@ def test_show_prints_every_field_and_masks_credentials(tmp_path, capsys):
     payload["api_key"] = "sk-ant-a-very-long-secret-key-value"
     payload["telegram_bot_token"] = "123456:ABCDEFGHIJKLMNOP"
     payload["telegram_chat_id"] = "9876543210"
-    payload["prompts"] = {"log": "find errors", "table": "csv please"}
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     assert config.run_show(path) == 0
@@ -825,15 +746,12 @@ def test_show_prints_every_field_and_masks_credentials(tmp_path, capsys):
         "Provider:",
         "Model:",
         "Default prompt:",
-        "Prompt presets:",
         "Save directory:",
         "API key:",
         "Telegram bot:",
         "Telegram chat:",
     ):
         assert label in out
-    # Presets listed alphabetically.
-    assert "log, table" in out
     # No secret appears in full — masking should truncate before the 8th char.
     assert "sk-ant-a-very-long" not in out
     assert "123456:ABCDEFGHIJKLMNOP" not in out

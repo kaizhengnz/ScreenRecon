@@ -20,6 +20,7 @@
 | 2026-08-14 | Windows multi-monitor DPI fix (SR-20): `platform.ensure_dpi_awareness()` now prefers per-monitor DPI aware v2 (`SetProcessDpiAwarenessContext(-4)`), falling through to v1 / system awareness on older Windows or manifest-pinned processes. Under v1 the picker's fullscreen overlay spanning mixed-DPI monitors received mouse events in the primary monitor's logical coordinate space instead of physical pixels, so `event.x_root/y_root` disagreed with mss's physical-pixel space — the saved region landed on the wrong monitor and mss then captured the wrong rectangle. New `--debug` flag (watch mode only): draws a persistent red 3px outline around the watched region so users can visually verify it matches their intent. Implemented as four thin borderless always-on-top Tk edge windows sitting just outside the capture rectangle — the region interior has no window over it, so clicks pass through naturally without needing platform-specific click-through APIs. New module `outline.py`; see §5.11. New `--screen` flag: re-picks just the watched region via the same picker as the wizard, rewriting only the `region` field of an existing config so credentials / prompts / model / dwell / save_dir are untouched (`config.run_set_region`). The watch banner's "Region:" line now appends `(on monitor N of M)` for the same reason `--configure`'s current-region line already did. The picker computes the monitor at pick time and `--configure` / `--screen` persist it as a new top-level `monitor: {"index", "of"}` config field, so the watcher displays exactly what the user chose without recomputing — the annotation cannot drift as monitors are plugged / unplugged or as `mss` reports them differently across DPI-awareness contexts (the SR-20 class of confusion). Old configs without the field fall back to a live compute that picks the containing monitor, or the nearest by squared distance when the centre lies outside every monitor. New helpers in `display.py`: `resolve_monitor_info` (compute), `format_monitor_info` (render). The separate `capture.check_region` warning still covers the "captures will be blank" diagnostic when the region is genuinely off the desktop. Removed the `--show-cursor` deprecation guard (dead code from 0.1.2); argparse's `unrecognized arguments` is enough three releases on. New targeted setters `--key`, `--model`, `--prompt`, `--dwell`, `--save-dir`, and `--telegram` follow the same shape as `--screen` — each opens the wizard's prompt for one field, saves, exits, refuses without an existing config, mutually exclusive; together they cover every field the wizard writes so a small change never forces a full wizard re-run. `--telegram` is the one bundled pair (bot token + chat ID) because they must move together. New `config.run_set_*` helpers share `_run_single_field_setter`. Read-only companion `--show` (`config.run_show`) prints the current config with credentials masked via `ui.mask`, so a user can see what is set without opening the JSON file or re-running the wizard. Archive and API upload both switch from PNG to JPEG (quality 90) — files become `.jpg`, `capture.to_jpeg_bytes` replaces `to_png_bytes`, `storage.save_jpeg` replaces `save_png`, telegram send and vision `image_block` use `image/jpeg`; `storage.new_stem` still checks `.png` alongside `.jpg` so pre-0.1.5 archives in the same directory do not collide. Watch loop and interactive `ask` now stream the model's response — new `vision.ask_streaming(api_key, model, messages, on_delta)` uses `client.messages.stream()`, calls the callback per text chunk, and returns the accumulated text as a `Reply` (same error handling as `ask`). Time-to-first-token replaces total-time as the perceived latency. |
 | 2026-08-14 | Multi-provider support (SR-23). `vision.py` becomes a thin dispatcher owning `Turn` (provider-agnostic conversation unit), `Reply`, and the `Provider` protocol; `get_provider(cfg)` picks by explicit `cfg["provider"]` or by model-name prefix (`claude-*` → Anthropic, `gpt-*` / `o*` → OpenAI, `gemini-*` → Google), defaulting to Anthropic for unknown prefixes so pre-existing configs keep working. Four provider implementations under a new `providers/` sub-package: `anthropic.py` (existing behaviour moved behind the protocol), `openai.py` (GPT via Chat Completions), `google.py` (Gemini via `google-genai`), and `openai_compatible.py` (subclass of the OpenAI provider that requires `base_url` — the shared code path for DeepSeek, Moonshot / Kimi, and Doubao, with `COMPAT_PRESETS` shipping the three verified base URLs and suggested vision models). Each new provider is behind its own optional extra: `pip install screenrecon[openai]` / `[google]` / `[all]`; missing SDK errors quote the exact install command. Config schema: new `api_key` / `provider` / `base_url` fields; legacy `anthropic_api_key` migrates into `api_key` on read and is stripped from the file on the next save. `ANTHROPIC_API_KEY` environment override is removed — the config file is the single source of truth (breaking change; users upgrading from 0.1.5 run `screenrecon --key` once). Wizard step 3 becomes two-step: pick a provider first, then pick a model from that provider's curated shortlist (or type any custom ID); the OpenAI-compatible path also collects a base-URL preset or a custom URL. `--model` follows the same shape; `--key` writes to the generic `api_key` field so a user who just switched providers runs it next without remembering which key type applies. `MODEL_CHOICES_BY_PROVIDER` and `COMPAT_PRESETS` replace the flat `MODEL_CHOICES` list. `run_show` labels the credential line "API key" and prints the provider display name + `base_url` (when relevant). `validate_config` rejects unknown provider names and requires `base_url` when `provider == "openai_compatible"`. |
 | 2026-08-16 | `code` prompt preset (SR-25). `PROMPT_CHOICES` gains a third entry whose value is `CODE_PROMPT_TEMPLATE` — a template rather than a finished prompt. New `_ask_prompt` wraps `_ask_choice`: when the template comes back it asks which language from `LANGUAGE_CHOICES` (Python, C#, Java, TypeScript, JavaScript, Go, C++, Rust, or any typed value) and substitutes it, so the saved prompt commits to one language instead of leaving the model to guess. Both the full wizard and the `--prompt` single-field setter route through the wrapper, so the follow-up cannot be reached from one path only. `_code_language_of` recovers the language from an already-saved code prompt, so rerunning `--prompt` offers "keep current — Go" rather than silently resetting to Python. No new config field and no CLI change; user-defined `prompts` entries are untouched. `_ask_choice` now drops the parenthesised note and its column padding when a preset's note is empty — the language list has nothing useful to put there, and the provider list stops rendering a bare `()`. |
+| 2026-08-17 | Consolidate prompt handling under one flag (SR-36). Delete `--mode NAME`, `cfg["prompts"]`, `resolve_prompt`, `PROMPT_CHOICES`, `CODE_PROMPT_TEMPLATE`, `LANGUAGE_CHOICES`, `_code_language_of`, and `_ask_prompt` — three parallel surfaces (single-field setter, runtime lookup, hardcoded shortlist) collapse into one. `--prompt` becomes `nargs="?"`: no argument keeps the mini-wizard setter, an argument becomes the inline session prompt (does not touch config) and doubles as the `ask` question when no positional is given. `merge_defaults` and `save` drop the pre-SR-36 `prompts` dict on read and write, matching the existing `anthropic_api_key` one-way migration. The wizard's default-prompt step becomes free-form text entry. Sample prompts move out of the code into `examples/prompts.json` — a copy-paste reference file, not runtime data. FR-13 restated: the system prompt is a single string, overridable per run via `--prompt "..."`. |
 
 ---
 
@@ -90,7 +91,7 @@ Wayland is explicitly unsupported — see [§5.2](#52-cursor-position-platformpy
 | FR-10 | After firing, the cursor must leave the region before the trigger can fire again | P0 |
 | FR-11 | An interactive setup wizard (`--configure`) verifies both sets of credentials online | P0 |
 | FR-12 | The wizard's region step uses an interactive drag-to-select picker (multi-monitor aware); Esc falls back to a 640×480 region centred on the current monitor | P1 |
-| FR-13 | Prompt presets: a built-in default plus user-defined named prompts, selected with `--mode <name>` | P1 |
+| FR-13 | A single system prompt (`cfg["prompt"]`), overridable per run via `--prompt "..."` | P1 |
 | FR-14 | An `ask` subcommand captures once and answers questions about that screenshot | P2 |
 | ~~FR-15~~ | ~~The `ANTHROPIC_API_KEY` environment variable overrides the key in the config file~~ (removed in 0.1.6; the config file is the single source of truth) | — |
 
@@ -377,16 +378,13 @@ otherwise `~/.config/screenrecon/config.json`.
   "telegram_chat_id": "123456789",
   "save_dir": "~/ScreenRecon",
   "prompt": "Describe what is in this screenshot. Be concise and lead with the key information.",
-  "prompts": {
-    "log": "Find the error messages in this screenshot and explain the likely cause."
-  },
   "dwell_seconds": 3
 }
 ```
 
 Rules:
 
-- Merged with defaults on load; `region` and `prompts` merge one level deep.
+- Merged with defaults on load; `region` merges one level deep. The pre-SR-36 `prompts` dict is dropped on read and stripped on the next save (one-way migration, like the `anthropic_api_key` field).
 - Startup is refused if any of the three credentials (`api_key`,
   `telegram_bot_token`, `telegram_chat_id`) is empty, pointing the user at
   `--configure`.
@@ -458,21 +456,19 @@ screenrecon --configure         interactive setup wizard (opens the drag picker)
 screenrecon --screen            re-pick just the watched region, leave everything else
 screenrecon --key               prompt for a new API key (for the current provider) only
 screenrecon --model             pick a new AI model only
-screenrecon --prompt            pick a new default prompt only
+screenrecon --prompt            pick a new default prompt only (mini-wizard)
+screenrecon --prompt "..."      use "..." as the system prompt for this run only
 screenrecon --dwell             set dwell seconds only
 screenrecon --save-dir          set the save directory only
 screenrecon --telegram          prompt for Telegram bot token + chat ID (as a pair)
 screenrecon --show              print the current config (credentials masked) and exit
 screenrecon --debug             watch as usual and overlay a red outline on the region
-screenrecon --mode <name>       use prompts.<name> as this run's prompt
 screenrecon ask [question]      capture once and ask about it
 screenrecon --config <path>     use an alternative config file
 screenrecon --version           print the version
 ```
 
-Global flags precede the subcommand. `--mode` is resolved on every path that
-reaches the API, so an unknown preset is always an error rather than a silently
-ignored flag; with `ask` and no question, the preset *is* the question.
+Global flags precede the subcommand. `--prompt` is `nargs="?"`: bare `--prompt` runs the setter, `--prompt "..."` becomes the inline session prompt (config untouched) and doubles as the `ask` question when no positional is supplied.
 
 `--screen`, `--key`, `--model`, `--prompt`, `--dwell`, `--save-dir`, and
 `--telegram` are targeted single-field setters — each opens the same prompt
@@ -684,7 +680,7 @@ No test touches the network or the screen.
 | Region configured off-screen | Warned at startup rather than silently uploading black images |
 | `--configure` region step, single monitor | Drag opens the overlay, a rectangle draws, release saves the region; Esc falls back to 640×480 centred |
 | `--configure` region step, multi-monitor | Overlay spans every monitor; drag on either monitor yields correct virtual-desktop coordinates and the wizard reports which monitor holds the region |
-| `screenrecon --screen` on an existing config | Opens the picker and rewrites only the `region` field; credentials, prompts, model, dwell, save_dir are untouched |
+| `screenrecon --screen` on an existing config | Opens the picker and rewrites only the `region` field; credentials, prompt, model, dwell, save_dir are untouched |
 | `screenrecon --debug` | Watch starts as usual and a red 3px outline is drawn just outside the region, click-through in the interior; teardown on Ctrl+C |
 
 ### 8.3 Reference implementation

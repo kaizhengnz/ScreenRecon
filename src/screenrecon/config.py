@@ -556,7 +556,7 @@ def _prompt_region(
         f"width={current.get('width')} height={current.get('height')}"
         + annotation
     )
-    answer = _ask("   Update this region?", "N").strip().lower()
+    answer = _ask("Update this region?", "N").strip().lower()
     if answer in ("y", "yes"):
         return picker_module.pick_region_or_default(current, picker_factory)
     return current
@@ -753,7 +753,7 @@ def run_set_key(path: str | os.PathLike[str] | None = None) -> int:
             raise ConfigError(str(exc)) from None
         ui.info(f"  Provider: {provider.display_name}")
         current = raw.get("api_key") or raw.get(LEGACY_API_KEY_FIELD) or ""
-        raw["api_key"] = _ask("  API key", current, secret=True)
+        raw["api_key"] = _ask("API key", current, secret=True)
 
     return _run_single_field_setter(path, "ScreenRecon set API key", setter)
 
@@ -822,13 +822,13 @@ def _prompt_provider_and_model(target: dict[str, Any]) -> None:
         # No curated list for this provider (openai_compatible after a custom
         # endpoint): fall back to a plain text prompt with the current value
         # as the default.
-        target["model"] = _ask("  model ID", current_model)
+        target["model"] = _ask("Model ID", current_model)
     else:
         default_value = model_options[-1][1] if current_model not in {
             v for _, v, _ in model_options
         } else current_model
         target["model"] = _ask_choice(
-            "model",
+            "Model",
             model_options,
             current_model,
             default=default_value,
@@ -891,7 +891,7 @@ def _prompt_compat_endpoint(target: dict[str, Any]) -> str | None:
 
 def _ask_prompt(current: str) -> str:
     """Numbered picker over :data:`PROMPT_CHOICES`; Enter keeps ``current``."""
-    return _ask_choice("prompt", PROMPT_CHOICES, current)
+    return _ask_choice("Prompt", PROMPT_CHOICES, current)
 
 
 def run_set_prompt(path: str | os.PathLike[str] | None = None) -> int:
@@ -907,7 +907,7 @@ def run_set_dwell(path: str | os.PathLike[str] | None = None) -> int:
     """Prompt for a new dwell-seconds value and save it; leave every other field alone."""
     def setter(raw: dict[str, Any]) -> None:
         current = raw.get("dwell_seconds", DEFAULTS["dwell_seconds"])
-        raw["dwell_seconds"] = _ask_float("  dwell seconds", current, minimum=0)
+        raw["dwell_seconds"] = _ask_float("Dwell seconds", current, minimum=0)
 
     return _run_single_field_setter(path, "ScreenRecon set dwell seconds", setter)
 
@@ -916,7 +916,7 @@ def run_set_save_dir(path: str | os.PathLike[str] | None = None) -> int:
     """Prompt for a new save directory and save it; leave every other field alone."""
     def setter(raw: dict[str, Any]) -> None:
         current = raw.get("save_dir", DEFAULT_SAVE_DIR)
-        raw["save_dir"] = _ask("  save directory", current)
+        raw["save_dir"] = _ask("Save directory", current)
 
     return _run_single_field_setter(path, "ScreenRecon set save directory", setter)
 
@@ -996,12 +996,12 @@ def run_set_telegram(path: str | os.PathLike[str] | None = None) -> int:
     """
     def setter(raw: dict[str, Any]) -> None:
         raw["telegram_bot_token"] = _ask(
-            "  Telegram bot token",
+            "Telegram bot token",
             raw.get("telegram_bot_token", DEFAULTS["telegram_bot_token"]),
             secret=True,
         )
         raw["telegram_chat_id"] = _ask(
-            "  Telegram chat ID",
+            "Telegram chat ID",
             raw.get("telegram_chat_id", DEFAULTS["telegram_chat_id"]),
             secret=True,
         )
@@ -1050,7 +1050,7 @@ def _run_wizard(
         " seconds. After a capture, the cursor must leave and re-enter the"
         " region to arm the next one."
     )
-    cfg["dwell_seconds"] = _ask_float("  dwell seconds", cfg["dwell_seconds"], minimum=0)
+    cfg["dwell_seconds"] = _ask_float("Dwell seconds", cfg["dwell_seconds"], minimum=0)
 
     ui.info("\n3) AI provider and model")
     _prompt_provider_and_model(cfg)
@@ -1065,12 +1065,12 @@ def _run_wizard(
         " scrollback."
     )
     current_key = str(cfg.get("api_key") or cfg.get(LEGACY_API_KEY_FIELD) or "")
-    cfg["api_key"] = _ask("  API key", current_key, secret=True)
-    cfg["telegram_bot_token"] = _ask("  Telegram bot token", cfg["telegram_bot_token"], secret=True)
-    cfg["telegram_chat_id"] = _ask("  Telegram chat ID", cfg["telegram_chat_id"], secret=True)
+    cfg["api_key"] = _ask("API key", current_key, secret=True)
+    cfg["telegram_bot_token"] = _ask("Telegram bot token", cfg["telegram_bot_token"], secret=True)
+    cfg["telegram_chat_id"] = _ask("Telegram chat ID", cfg["telegram_chat_id"], secret=True)
 
     ui.info("\n6) Local archive")
-    cfg["save_dir"] = _ask("  save directory", cfg["save_dir"])
+    cfg["save_dir"] = _ask("Save directory", cfg["save_dir"])
 
     ui.rule("Verifying credentials")
     ok_ai, msg_ai = vision.verify_key(cfg)

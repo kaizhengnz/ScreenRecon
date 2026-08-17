@@ -165,6 +165,47 @@ def test_choice_gives_up_after_repeated_invalid_answers(answers):
         )
 
 
+def test_prompt_choice_by_number_returns_the_prompt_text(answers):
+    """Picking a numbered entry returns its full prompt string, not the label."""
+    scripted, _ = answers
+    scripted.append("1")
+    result = config._ask_prompt("old current prompt")
+    assert result == config.PROMPT_CHOICES[0][1]
+    assert result != config.PROMPT_CHOICES[0][0]
+
+
+def test_prompt_choice_enter_keeps_current_when_not_default(answers):
+    """Enter maps to "keep current" when the current value is not one of the shipped picks."""
+    scripted, _ = answers
+    scripted.append("")
+    assert config._ask_prompt("my custom prompt") == "my custom prompt"
+
+
+def test_prompt_choice_enter_lands_on_describe_when_current_matches_default(answers):
+    """Fresh install: DEFAULT_PROMPT is option 1 (describe), Enter picks it."""
+    scripted, _ = answers
+    scripted.append("")
+    assert config._ask_prompt(config.DEFAULT_PROMPT) == config.DEFAULT_PROMPT
+
+
+def test_prompt_choice_typed_text_becomes_a_custom_value(answers):
+    """Non-numeric input passes through as the new prompt verbatim."""
+    scripted, _ = answers
+    scripted.append("Find bugs in the screenshot.")
+    assert config._ask_prompt("old current") == "Find bugs in the screenshot."
+
+
+def test_prompt_choices_have_the_expected_shape():
+    """Every entry is a (label, value, note) triple; label and value are non-empty strings."""
+    assert len(config.PROMPT_CHOICES) >= 4
+    for entry in config.PROMPT_CHOICES:
+        label, value, _ = entry
+        assert isinstance(label, str) and label
+        assert isinstance(value, str) and value
+    labels = [label for label, _, _ in config.PROMPT_CHOICES]
+    assert len(labels) == len(set(labels)), "duplicate labels"
+
+
 def test_minimum_is_enforced(answers):
     scripted, _ = answers
     scripted.extend(["0", "-5", "800"])

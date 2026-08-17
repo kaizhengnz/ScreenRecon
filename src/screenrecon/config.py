@@ -91,6 +91,44 @@ preset label or a custom base URL; when a label is picked, the default
 model is pre-filled but still editable. Endpoints verified against each
 provider's compat-mode docs at the time of writing (2026-08)."""
 
+PROMPT_CHOICES: list[tuple[str, str, str]] = [
+    (
+        "describe",
+        DEFAULT_PROMPT,
+        "recognition or OCR",
+    ),
+    (
+        "answer",
+        "Read the question in this screenshot and answer it.",
+        "answer a question in the image",
+    ),
+    (
+        "translate_english",
+        "Translate the text in this screenshot into English. Preserve line breaks and formatting.",
+        "translate to English",
+    ),
+    (
+        "find_errors",
+        "Find the error messages in this screenshot and explain the likely cause. If a fix is obvious, suggest it in one line.",
+        "error diagnosis",
+    ),
+    (
+        "table_to_csv",
+        "Transcribe this table as CSV. Include the header row and preserve column order.",
+        "table → CSV",
+    ),
+    (
+        "extract_text",
+        "Transcribe every legible piece of text in this screenshot verbatim. No summarising, no rewriting.",
+        "verbatim OCR",
+    ),
+]
+"""Starter prompts offered by the wizard as numbered picks. The label is a
+short synonym for the numbered list; the value is the prompt string that
+lands in the config. ``describe`` deliberately points at :data:`DEFAULT_PROMPT`
+so a fresh Enter maps to option 1."""
+
+
 DEFAULTS: dict[str, Any] = {
     "region": {"left": 100, "top": 100, "width": 600, "height": 400},
     # provider: empty means "infer from model prefix"; the dispatcher falls
@@ -827,12 +865,23 @@ def _prompt_compat_endpoint(target: dict[str, Any]) -> str | None:
 
 
 def run_set_prompt(path: str | os.PathLike[str] | None = None) -> int:
-    """Prompt for a new default prompt string and save it; leave every other field alone."""
+    """Pick a new default prompt and save it; leave every other field alone."""
     def setter(raw: dict[str, Any]) -> None:
         current = str(raw.get("prompt", DEFAULT_PROMPT))
-        raw["prompt"] = _ask("  default prompt", current)
+        raw["prompt"] = _ask_prompt(current)
 
     return _run_single_field_setter(path, "ScreenRecon set default prompt", setter)
+
+
+def _ask_prompt(current: str) -> str:
+    """Wrap :func:`_ask_choice` with the shipped :data:`PROMPT_CHOICES` list.
+
+    No ``default=`` — Enter always maps to "keep current" so a user who has
+    already tuned the prompt does not lose it by pressing Enter through the
+    wizard. On a fresh install the current value is :data:`DEFAULT_PROMPT`
+    (matching option 1 ``describe``), so Enter still lands there.
+    """
+    return _ask_choice("default prompt", PROMPT_CHOICES, current)
 
 
 def run_set_dwell(path: str | os.PathLike[str] | None = None) -> int:
@@ -988,8 +1037,7 @@ def _run_wizard(
     _prompt_provider_and_model(cfg)
 
     ui.info("\n4) Default prompt")
-    ui.info("   The system prompt sent with every capture. See examples/prompts.json in the repo for starter prompts you can copy.")
-    cfg["prompt"] = _ask("  default prompt", str(cfg["prompt"]))
+    cfg["prompt"] = _ask_prompt(str(cfg["prompt"]))
 
     ui.info("\n5) Credentials")
     ui.info(

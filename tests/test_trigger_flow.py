@@ -93,9 +93,10 @@ def test_telegram_raising_does_not_escape_the_trigger(cfg, stubs, monkeypatch):
 
 
 def test_unusable_save_dir_does_not_stop_telegram(cfg, stubs, monkeypatch):
-    monkeypatch.setattr(
-        storage, "resolve_dir", lambda path: (_ for _ in ()).throw(OSError(13, "Permission denied"))
-    )
+    def deny_save_dir(_path: str) -> None:
+        (_ for _ in ()).throw(OSError(13, "Permission denied"))
+
+    monkeypatch.setattr(storage, "resolve_dir", deny_save_dir)
     assert watcher.handle_trigger(cfg, "read this") is True
     assert stubs["notify"] == ["the answer"]
 

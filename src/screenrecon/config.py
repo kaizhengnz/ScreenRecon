@@ -109,7 +109,10 @@ PROMPT_CHOICES: list[tuple[str, str, str]] = [
     ),
     (
         "find_errors",
-        "Find the error messages in this screenshot and explain the likely cause. If a fix is obvious, suggest it in one line.",
+        (
+            "Find the error messages in this screenshot and explain the likely cause. "
+            "If a fix is obvious, suggest it in one line."
+        ),
         "error diagnosis",
     ),
     (
@@ -119,7 +122,10 @@ PROMPT_CHOICES: list[tuple[str, str, str]] = [
     ),
     (
         "extract_text",
-        "Transcribe every legible piece of text in this screenshot verbatim. No summarising, no rewriting.",
+        (
+            "Transcribe every legible piece of text in this screenshot verbatim. "
+            "No summarising, no rewriting."
+        ),
         "verbatim OCR",
     ),
 ]

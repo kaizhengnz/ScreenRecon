@@ -421,7 +421,9 @@ def test_wizard_aborts_cleanly_on_closed_stdin(tmp_path, answers, offline, capsy
     assert "stdin is closed" in capsys.readouterr().err
 
 
-def test_wizard_reports_failed_verification_but_still_saves(tmp_path, answers, monkeypatch, capsys):
+def test_wizard_reports_failed_verification_but_still_saves(
+    tmp_path, answers, monkeypatch, capsys,
+):
     scripted, _ = answers
     monkeypatch.setattr(vision, "verify_key", lambda cfg: (False, "key is invalid"))
     monkeypatch.setattr(notify, "verify_credentials", lambda token, chat: (True, "ok"))

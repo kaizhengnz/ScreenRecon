@@ -14,8 +14,12 @@ on:
           - major
 
 jobs:
+  quality:
+    uses: ./.github/workflows/quality.yml
+
   open-release-pr:
     name: Open release PR
+    needs: quality
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -58,13 +62,17 @@ jobs:
             --head "release/v${NEW_VERSION}" \
             --title "chore: release v${NEW_VERSION}" \
             --body "Automated release bump for v${NEW_VERSION}. Merged synchronously by the workflow; publish runs on the merge commit via release_auto.yml."
+      - name: Wait for required checks on the release PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+        run: gh pr checks --watch "release/v${NEW_VERSION}"
       - name: Merge the release PR synchronously
         env:
           GH_TOKEN: ${{ github.token }}
           NEW_VERSION: ${{ steps.bump.outputs.new_version }}
-        # `gh pr merge --squash` (no --auto) blocks until the merge completes,
-        # so the next step's `gh workflow run` fires against a `main` that
-        # already contains the release commit.
+        # Blocks until the merge completes, so the next step's `gh workflow run`
+        # fires against a `main` that already contains the release commit.
         run: gh pr merge --squash --delete-branch "release/v${NEW_VERSION}"
       - name: Trigger release_auto on the new main
         env:

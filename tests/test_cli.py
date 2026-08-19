@@ -83,7 +83,16 @@ def test_inline_prompt_with_ask_becomes_the_question(config_file, calls):
 
 def test_inline_prompt_yields_to_positional_ask_question(config_file, calls):
     assert cli.main(
-        ["--config", config_file, "--prompt", "look for errors", "ask", "no", "actually", "translate"]
+        [
+            "--config",
+            config_file,
+            "--prompt",
+            "look for errors",
+            "ask",
+            "no",
+            "actually",
+            "translate",
+        ]
     ) == 0
     assert calls["ask"] == "no actually translate"
 

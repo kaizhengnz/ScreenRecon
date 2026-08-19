@@ -109,7 +109,10 @@ PROMPT_CHOICES: list[tuple[str, str, str]] = [
     ),
     (
         "find_errors",
-        "Find the error messages in this screenshot and explain the likely cause. If a fix is obvious, suggest it in one line.",
+        (
+            "Find the error messages in this screenshot and explain the likely cause. "
+            "If a fix is obvious, suggest it in one line."
+        ),
         "error diagnosis",
     ),
     (
@@ -119,7 +122,10 @@ PROMPT_CHOICES: list[tuple[str, str, str]] = [
     ),
     (
         "extract_text",
-        "Transcribe every legible piece of text in this screenshot verbatim. No summarising, no rewriting.",
+        (
+            "Transcribe every legible piece of text in this screenshot verbatim. "
+            "No summarising, no rewriting."
+        ),
         "verbatim OCR",
     ),
 ]
@@ -507,7 +513,7 @@ def _ask_choice(
     # to; a note-less list (e.g. the provider picker) would otherwise get a
     # huge blank gap between the padded label and the trailing parens.
     have_any_note = any(note for _, _, note in presets)
-    width = max([len(l) for l in labels] + [len(current_label)]) if have_any_note else 0
+    width = max([len(label) for label in labels] + [len(current_label)]) if have_any_note else 0
 
     for index, (preset_label, _, note) in enumerate(presets, start=1):
         suffix = f"  ({note})" if note else ""
